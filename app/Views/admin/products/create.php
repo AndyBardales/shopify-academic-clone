@@ -172,7 +172,7 @@
                                     <th style="text-align: right;">Precio (<?= $currency ?>) *</th>
                                     <th style="text-align: right;">P. Tachado</th>
                                     <th style="text-align: right;">Stock *</th>
-                                    <th>URL Imagen</th>
+                                    <th>Foto de Variante</th>
                                     <th style="text-align: center;"></th>
                                 </tr>
                             </thead>
@@ -194,7 +194,18 @@
                                         <input type="number" min="0" name="variant_qty[]" class="form-control variant-num-input" value="5" style="padding: 8px 10px; font-size: 13px; width: 100%; text-align: right; font-weight: 600; box-sizing: border-box;">
                                     </td>
                                     <td>
-                                        <input type="text" name="variant_image_url[]" class="form-control" placeholder="assets/images/..." style="padding: 8px 10px; font-size: 13px; width: 100%; box-sizing: border-box;">
+                                        <div class="scms-var-img-picker" style="display: flex; align-items: center; gap: 6px;">
+                                            <input type="hidden" name="variant_existing_image[]" value="">
+                                            <input type="hidden" name="variant_clear_image[]" value="0">
+                                            <div class="scms-var-thumb" style="width: 34px; height: 34px; border-radius: 6px; border: 1px solid #E5E7EB; background: #F9FAFB; display: flex; align-items: center; justify-content: center; flex-shrink: 0; overflow: hidden;">
+                                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9CA3AF" stroke-width="1.8"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+                                            </div>
+                                            <label class="btn btn-secondary btn-sm" style="padding: 5px 8px; font-size: 11.5px; cursor: pointer; margin: 0;">
+                                                <span class="scms-var-pick-label">Subir</span>
+                                                <input type="file" name="variant_image_file[]" accept=".webp,.jpg,.jpeg,.png,image/webp,image/jpeg,image/png" style="display: none;" onchange="onVariantImagePicked(this)">
+                                            </label>
+                                            <button type="button" class="scms-var-clear btn btn-secondary btn-sm" onclick="clearVariantImage(this)" title="Quitar foto" style="display: none; padding: 4px 7px; font-size: 12px; color: #DC2626; border-color: #FCA5A5;">&times;</button>
+                                        </div>
                                     </td>
                                     <td style="text-align: center;">
                                         <button type="button" class="btn btn-secondary btn-sm" onclick="removeVariantRow(this)" title="Quitar variante" style="padding: 6px 8px; color: #DC2626; border-color: #FCA5A5;">
@@ -270,42 +281,73 @@
 
             <!-- IMAGEN DESTACADA -->
             <div class="polaris-card">
-                <div class="card-header">
+                <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
                     <h2 class="card-title">Imagen Principal</h2>
+                    <span class="badge" style="background: #ECFDF5; color: #065F46; font-size: 10.5px;">WebP recomendado</span>
                 </div>
                 <div class="card-body">
-                    <div class="form-group">
-                        <label for="featured_image">Subir archivo de imagen</label>
-                        <input type="file" id="featured_image" name="featured_image" class="form-control" accept="image/*">
+                    <div id="featured_image_error" style="display: none; background: #FEF2F2; border: 1px solid #FCA5A5; color: #991B1B; padding: 8px 10px; border-radius: 6px; font-size: 12px; margin-bottom: 10px;"></div>
+
+                    <div id="featured_image_preview_wrap" style="display: none; position: relative; margin-bottom: 12px; border: 1px solid #E5E7EB; border-radius: 8px; padding: 8px; background: #F9FAFB; text-align: center;">
+                        <button type="button" onclick="clearMainImageSelection()" title="Quitar imagen principal" style="position: absolute; top: 6px; right: 6px; background: #DC2626; color: #FFF; border: none; border-radius: 999px; width: 22px; height: 22px; font-size: 14px; font-weight: 700; cursor: pointer; line-height: 1;">&times;</button>
+                        <img id="featured_image_preview_img" src="" alt="Vista previa" style="max-width: 100%; max-height: 150px; object-fit: contain; border-radius: 6px;">
+                        <div id="featured_image_preview_meta" style="font-size: 11px; color: #4B5563; margin-top: 6px; word-break: break-all;"></div>
                     </div>
 
                     <div class="form-group">
-                        <label for="featured_image_url">O escribir URL / ruta de imagen</label>
-                        <input type="text" id="featured_image_url" name="featured_image_url" class="form-control" placeholder="uploads/products/..." >
+                        <label for="featured_image" class="btn btn-secondary" style="width: 100%; justify-content: center; cursor: pointer; display: inline-flex; align-items: center; gap: 6px;">
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                            <span>Buscar imagen en mi equipo</span>
+                        </label>
+                        <input type="file" id="featured_image" name="featured_image" style="display: none;" accept=".webp,.jpg,.jpeg,.png,image/webp,image/jpeg,image/png" onchange="onMainImagePicked(this)">
+                        <small style="display: block; margin-top: 6px; color: var(--color-text-secondary); font-size: 11px;">
+                            Formatos: <strong>WebP (recomendado)</strong>, JPG o PNG · Máx. <strong>2 MB</strong>.
+                        </small>
                     </div>
+
+                    <details style="font-size: 12px; color: var(--color-text-secondary);">
+                        <summary style="cursor: pointer; font-weight: 600;">O usar URL externa (opcional)</summary>
+                        <div class="form-group" style="margin-top: 8px; margin-bottom: 0;">
+                            <input type="text" id="featured_image_url" name="featured_image_url" class="form-control" placeholder="https://...">
+                        </div>
+                    </details>
                 </div>
             </div>
 
             <!-- GALERÍA MÚLTIPLE DE IMÁGENES -->
             <div class="polaris-card">
-                <div class="card-header">
-                    <h2 class="card-title">Galería Adicional de Imágenes</h2>
+                <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+                    <h2 class="card-title">Galería Adicional</h2>
+                    <span id="gallery_counter_badge" class="badge" style="background: #EFF6FF; color: #1D4ED8; font-size: 11px;">0 / 6 fotos</span>
                 </div>
                 <div class="card-body">
-                    <div class="form-group">
-                        <label for="gallery_images">Subir varias fotos (ángulos o detalles)</label>
-                        <input type="file" id="gallery_images" name="gallery_images[]" class="form-control" accept="image/*" multiple onchange="previewGalleryFiles(this)">
-                        <small style="color: var(--color-text-secondary); font-size: 11px;">Puedes seleccionar múltiples archivos a la vez.</small>
+                    <div style="background: #F0FDF4; border: 1px solid #BBF7D0; border-radius: 6px; padding: 8px 10px; font-size: 11.5px; color: #166534; margin-bottom: 12px; line-height: 1.4;">
+                        <strong>Reglas:</strong> Usa formato <strong>WebP</strong> (recomendado por su ligereza y nitidez), JPG o PNG. Hasta <strong>6 fotos</strong> de máximo <strong>2 MB</strong> c/u.
                     </div>
-                    <div id="gallery_files_preview" style="display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px;"></div>
 
-                    <div class="form-group" style="margin-bottom: 8px;">
-                        <label style="font-size: 12.5px;">O añadir URLs / rutas adicionales</label>
-                        <div id="gallery_urls_container" style="display: flex; flex-direction: column; gap: 6px;">
-                            <input type="text" name="gallery_urls[]" class="form-control" placeholder="https://... o uploads/products/...">
-                        </div>
+                    <div id="gallery_validation_alert" style="display: none; background: #FEF2F2; border: 1px solid #FCA5A5; color: #991B1B; padding: 8px 10px; border-radius: 6px; font-size: 12px; margin-bottom: 10px; line-height: 1.4;"></div>
+
+                    <div class="form-group">
+                        <label for="gallery_images" class="btn btn-secondary" style="width: 100%; justify-content: center; cursor: pointer; display: inline-flex; align-items: center; gap: 6px;">
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                            <span>Agregar fotos desde mi equipo</span>
+                        </label>
+                        <input type="file" id="gallery_images" name="gallery_images[]" style="display: none;" accept=".webp,.jpg,.jpeg,.png,image/webp,image/jpeg,image/png" multiple onchange="previewGalleryFiles(this)">
                     </div>
-                    <button type="button" class="btn btn-secondary btn-sm" onclick="addGalleryUrlInput()">+ Agregar otra URL</button>
+                    <div id="gallery_files_preview" style="display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 12px;"></div>
+
+                    <details style="font-size: 12px; color: var(--color-text-secondary);">
+                        <summary style="cursor: pointer; font-weight: 600;">O añadir URLs externas (opcional)</summary>
+                        <div style="margin-top: 8px;">
+                            <div id="gallery_urls_container" style="display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px;">
+                                <div style="display: flex; gap: 6px; align-items: center;">
+                                    <input type="text" name="gallery_urls[]" class="form-control" placeholder="https://..." oninput="renderGalleryQueue()">
+                                    <button type="button" class="btn btn-secondary btn-sm" onclick="removeGalleryUrlRow(this)" title="Quitar URL" style="padding: 6px 10px; color: #DC2626; border-color: #FCA5A5;">&times;</button>
+                                </div>
+                            </div>
+                            <button type="button" class="btn btn-secondary btn-sm" onclick="addGalleryUrlInput()">+ Otra URL</button>
+                        </div>
+                    </details>
                 </div>
             </div>
 
@@ -453,7 +495,18 @@ function addVariantRow() {
             <input type="number" min="0" name="variant_qty[]" class="form-control variant-num-input" value="5" style="padding: 8px 10px; font-size: 13px; width: 100%; text-align: right; font-weight: 600; box-sizing: border-box;">
         </td>
         <td>
-            <input type="text" name="variant_image_url[]" class="form-control" placeholder="assets/images/..." style="padding: 8px 10px; font-size: 13px; width: 100%; box-sizing: border-box;">
+            <div class="scms-var-img-picker" style="display: flex; align-items: center; gap: 6px;">
+                <input type="hidden" name="variant_existing_image[]" value="">
+                <input type="hidden" name="variant_clear_image[]" value="0">
+                <div class="scms-var-thumb" style="width: 34px; height: 34px; border-radius: 6px; border: 1px solid #E5E7EB; background: #F9FAFB; display: flex; align-items: center; justify-content: center; flex-shrink: 0; overflow: hidden;">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9CA3AF" stroke-width="1.8"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+                </div>
+                <label class="btn btn-secondary btn-sm" style="padding: 5px 8px; font-size: 11.5px; cursor: pointer; margin: 0;">
+                    <span class="scms-var-pick-label">Subir</span>
+                    <input type="file" name="variant_image_file[]" accept=".webp,.jpg,.jpeg,.png,image/webp,image/jpeg,image/png" style="display: none;" onchange="onVariantImagePicked(this)">
+                </label>
+                <button type="button" class="scms-var-clear btn btn-secondary btn-sm" onclick="clearVariantImage(this)" title="Quitar foto" style="display: none; padding: 4px 7px; font-size: 12px; color: #DC2626; border-color: #FCA5A5;">&times;</button>
+            </div>
         </td>
         <td style="text-align: center;">
             <button type="button" class="btn btn-secondary btn-sm" onclick="removeVariantRow(this)" title="Quitar variante" style="padding: 6px 8px; color: #DC2626; border-color: #FCA5A5;">

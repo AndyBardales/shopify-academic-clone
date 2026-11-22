@@ -155,12 +155,53 @@ class AdminController {
         ]);
     }
 
-    private function uploadProductImageFile(string $tmpName, string $originalName, string $prefix = 'prod_'): ?string {
+    private const MAX_IMAGE_BYTES = 2097152; // 2 MB
+    private const MAX_GALLERY_IMAGES = 6;
+
+    private function uploadProductImageFile(string $tmpName, string $originalName, string $prefix = 'prod_', ?array &$errors = null, int $fileSize = 0): ?string {
         $ext = strtolower(pathinfo($originalName, PATHINFO_EXTENSION));
-        $allowed = ['jpg', 'jpeg', 'png', 'webp', 'gif', 'svg'];
-        if ($ext === '' || !in_array($ext, $allowed, true)) {
+        $allowedExt = ['webp', 'jpg', 'jpeg', 'png'];
+        if ($ext === '' || !in_array($ext, $allowedExt, true)) {
+            if ($errors !== null) {
+                $errors[] = "Formato no permitido en '" . basename($originalName) . "'. Usa WebP (recomendado), JPG o PNG.";
+            }
             return null;
         }
+
+        $actualSize = $fileSize > 0 ? $fileSize : (is_file($tmpName) ? (int)filesize($tmpName) : 0);
+        if ($actualSize <= 0 || $actualSize > self::MAX_IMAGE_BYTES) {
+            if ($errors !== null) {
+                $errors[] = "La imagen '" . basename($originalName) . "' supera el límite máximo de 2 MB.";
+            }
+            return null;
+        }
+
+        // Validación real de contenido de imagen / MIME
+        $allowedMimes = ['image/webp', 'image/jpeg', 'image/png'];
+        $mime = '';
+        if (function_exists('finfo_open') && is_file($tmpName)) {
+            $finfo = @finfo_open(FILEINFO_MIME_TYPE);
+            if ($finfo) {
+                $mime = (string)@finfo_file($finfo, $tmpName);
+                @finfo_close($finfo);
+            }
+        }
+        if ($mime !== '' && !in_array($mime, $allowedMimes, true)) {
+            if ($errors !== null) {
+                $errors[] = "El archivo '" . basename($originalName) . "' no es una imagen válida WebP, JPG o PNG.";
+            }
+            return null;
+        }
+        if (function_exists('getimagesize') && is_file($tmpName)) {
+            $imgInfo = @getimagesize($tmpName);
+            if ($imgInfo === false) {
+                if ($errors !== null) {
+                    $errors[] = "No se pudo verificar '" . basename($originalName) . "' como imagen válida.";
+                }
+                return null;
+            }
+        }
+
         $uploadDir = dirname(__DIR__, 2) . '/uploads/products/';
         if (!is_dir($uploadDir)) {
             @mkdir($uploadDir, 0777, true);
@@ -172,7 +213,7 @@ class AdminController {
         return null;
     }
 
-    private function uploadProductGalleryFiles(string $fieldName = 'gallery_images'): array {
+    private function uploadProductGalleryFiles(string $fieldName = 'gallery_images', ?array &$errors = null, int $maxAllowed = self::MAX_GALLERY_IMAGES): array {
         $paths = [];
         if (empty($_FILES[$fieldName]) || !is_array($_FILES[$fieldName]['name'] ?? null)) {
             return $paths;
@@ -180,23 +221,39 @@ class AdminController {
         $names = $_FILES[$fieldName]['name'];
         $tmps = $_FILES[$fieldName]['tmp_name'] ?? [];
         $errs = $_FILES[$fieldName]['error'] ?? [];
+        $sizes = $_FILES[$fieldName]['size'] ?? [];
         $count = count($names);
         for ($i = 0; $i < $count; $i++) {
-            if (!empty($names[$i]) && ($errs[$i] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_OK && !empty($tmps[$i])) {
-                $saved = $this->uploadProductImageFile($tmps[$i], $names[$i], 'prod_gal_');
-                if ($saved !== null) {
-                    $paths[] = $saved;
+            if (empty($names[$i])) continue;
+            $errCode = $errs[$i] ?? UPLOAD_ERR_NO_FILE;
+            if ($errCode === UPLOAD_ERR_NO_FILE) continue;
+            if ($errCode === UPLOAD_ERR_INI_SIZE || $errCode === UPLOAD_ERR_FORM_SIZE) {
+                if ($errors !== null) $errors[] = "La imagen '" . basename($names[$i]) . "' supera el límite máximo de 2 MB.";
+                continue;
+            }
+            if ($errCode !== UPLOAD_ERR_OK || empty($tmps[$i])) {
+                continue;
+            }
+            if (count($paths) >= $maxAllowed) {
+                if ($errors !== null) {
+                    $errors[] = "Solo se permiten hasta " . self::MAX_GALLERY_IMAGES . " imágenes adicionales en la galería.";
                 }
+                break;
+            }
+            $saved = $this->uploadProductImageFile($tmps[$i], $names[$i], 'prod_gal_', $errors, (int)($sizes[$i] ?? 0));
+            if ($saved !== null) {
+                $paths[] = $saved;
             }
         }
         return $paths;
     }
 
-    private function saveProductGalleryItems(int $productId, array $uploadedPaths, array $urlInputs): void {
+    private function saveProductGalleryItems(int $productId, array $uploadedPaths, array $urlInputs, ?array &$errors = null): void {
         if ($productId <= 0) return;
         $existing = Database::fetchAll("SELECT image_url, sort_order FROM " . Database::table('product_images') . " WHERE product_id = ?", [$productId]);
         $seen = [];
         $maxOrder = 0;
+        $currentCount = count($existing);
         foreach ($existing as $row) {
             $seen[trim((string)$row['image_url'])] = true;
             $ord = (int)($row['sort_order'] ?? 0);
@@ -215,14 +272,52 @@ class AdminController {
 
         foreach ($candidates as $path) {
             if (isset($seen[$path])) continue;
+            if ($currentCount >= self::MAX_GALLERY_IMAGES) {
+                if ($errors !== null) {
+                    $errors[] = "Límite alcanzado: máximo " . self::MAX_GALLERY_IMAGES . " fotos adicionales en galería.";
+                }
+                break;
+            }
             $seen[$path] = true;
             $maxOrder += 1;
+            $currentCount += 1;
             Database::insert('product_images', [
                 'product_id' => $productId,
                 'image_url' => $path,
                 'sort_order' => $maxOrder
             ]);
         }
+    }
+
+    private function resolveVariantImageAtIndex(int $idx, string $existingImg, bool $clearFlag, ?array &$errors = null): ?string {
+        if (!empty($_FILES['variant_image_file']['name'][$idx])) {
+            $errCode = $_FILES['variant_image_file']['error'][$idx] ?? UPLOAD_ERR_NO_FILE;
+            if ($errCode === UPLOAD_ERR_INI_SIZE || $errCode === UPLOAD_ERR_FORM_SIZE) {
+                if ($errors !== null) {
+                    $errors[] = "La foto de la variante supera el límite máximo de 2 MB.";
+                }
+            } elseif ($errCode === UPLOAD_ERR_OK && !empty($_FILES['variant_image_file']['tmp_name'][$idx])) {
+                $uploaded = $this->uploadProductImageFile(
+                    $_FILES['variant_image_file']['tmp_name'][$idx],
+                    $_FILES['variant_image_file']['name'][$idx],
+                    'prod_var_',
+                    $errors,
+                    (int)($_FILES['variant_image_file']['size'][$idx] ?? 0)
+                );
+                if ($uploaded !== null) {
+                    return $uploaded;
+                }
+            }
+        }
+        if ($clearFlag) {
+            return null;
+        }
+        $existingTrim = trim($existingImg);
+        if ($existingTrim !== '') {
+            return $existingTrim;
+        }
+        $urlFallback = trim((string)($_POST['variant_image_url'][$idx] ?? ''));
+        return $urlFallback !== '' ? $urlFallback : null;
     }
 
     private function deleteProductGalleryItems(int $productId, array $deleteIds): void {
@@ -321,14 +416,26 @@ class AdminController {
             }
         }
 
-        // Subida de imagen destacada y galería adicional
+        // Subida de imagen destacada y galería adicional con validación de formato/peso
+        $imageErrors = [];
         $featuredImage = null;
-        if (!empty($_FILES['featured_image']['name']) && $_FILES['featured_image']['error'] === UPLOAD_ERR_OK) {
-            $featuredImage = $this->uploadProductImageFile($_FILES['featured_image']['tmp_name'], $_FILES['featured_image']['name'], 'prod_');
+        if (!empty($_FILES['featured_image']['name'])) {
+            $errMain = $_FILES['featured_image']['error'] ?? UPLOAD_ERR_NO_FILE;
+            if ($errMain === UPLOAD_ERR_INI_SIZE || $errMain === UPLOAD_ERR_FORM_SIZE) {
+                $imageErrors[] = "La imagen principal supera el límite máximo de 2 MB.";
+            } elseif ($errMain === UPLOAD_ERR_OK) {
+                $featuredImage = $this->uploadProductImageFile(
+                    $_FILES['featured_image']['tmp_name'],
+                    $_FILES['featured_image']['name'],
+                    'prod_',
+                    $imageErrors,
+                    (int)($_FILES['featured_image']['size'] ?? 0)
+                );
+            }
         } elseif (!empty($_POST['featured_image_url'])) {
             $featuredImage = trim($_POST['featured_image_url']);
         }
-        $galleryUploads = $this->uploadProductGalleryFiles('gallery_images');
+        $galleryUploads = $this->uploadProductGalleryFiles('gallery_images', $imageErrors, self::MAX_GALLERY_IMAGES);
         $galleryUrls = is_array($_POST['gallery_urls'] ?? null) ? $_POST['gallery_urls'] : [];
         if (($featuredImage === null || $featuredImage === '') && !empty($galleryUploads)) {
             $featuredImage = $galleryUploads[0];
@@ -346,7 +453,8 @@ class AdminController {
             $variantPrices = $_POST['variant_price'] ?? [];
             $variantComparePrices = $_POST['variant_compare_price'] ?? [];
             $variantQtys = $_POST['variant_qty'] ?? [];
-            $variantImages = $_POST['variant_image_url'] ?? [];
+            $variantExistingImages = $_POST['variant_existing_image'] ?? [];
+            $variantClearImages = $_POST['variant_clear_image'] ?? [];
 
             for ($i = 0; $i < count($variantTitles); $i++) {
                 $vTitle = trim($variantTitles[$i]);
@@ -355,7 +463,12 @@ class AdminController {
                     $vCompare = (!empty($variantComparePrices[$i]) && trim((string)$variantComparePrices[$i]) !== '') ? max(0, (float)$variantComparePrices[$i]) : null;
                     $vQty = (isset($variantQtys[$i]) && trim((string)$variantQtys[$i]) !== '') ? max(0, (int)$variantQtys[$i]) : 0;
                     $vSku = trim($variantSkus[$i] ?? '');
-                    $vImg = !empty($variantImages[$i]) ? trim($variantImages[$i]) : null;
+                    $vImg = $this->resolveVariantImageAtIndex(
+                        $i,
+                        (string)($variantExistingImages[$i] ?? ''),
+                        !empty($variantClearImages[$i]),
+                        $imageErrors
+                    );
 
                     if ($firstVariantPrice === null) {
                         $firstVariantPrice = $vPrice;
@@ -425,8 +538,11 @@ class AdminController {
         }
 
         // Guardar galería múltiple de imágenes
-        $this->saveProductGalleryItems((int)$productId, $galleryUploads, $galleryUrls);
+        $this->saveProductGalleryItems((int)$productId, $galleryUploads, $galleryUrls, $imageErrors);
 
+        if (!empty($imageErrors)) {
+            $_SESSION['flash_error'] = implode(' ', array_unique($imageErrors));
+        }
         $_SESSION['flash_success'] = 'Producto creado exitosamente.';
         header('Location: ' . (defined('APP_URL') ? APP_URL : '') . '/admin/products');
         exit;
@@ -498,16 +614,28 @@ class AdminController {
         $option3Name = !empty($_POST['option3_name']) ? trim($_POST['option3_name']) : ($product['option3_name'] ?? null);
         $isActive = isset($_POST['is_active']) ? (int)$_POST['is_active'] : 0;
 
-        // Subida o conservación de imagen destacada
-        $featuredImage = $product['featured_image'];
-        if (!empty($_FILES['featured_image']['name']) && $_FILES['featured_image']['error'] === UPLOAD_ERR_OK) {
-            $uploadedMain = $this->uploadProductImageFile($_FILES['featured_image']['tmp_name'], $_FILES['featured_image']['name'], 'prod_');
-            if ($uploadedMain !== null) {
-                $featuredImage = $uploadedMain;
+        // Subida, limpieza o conservación de imagen destacada
+        $imageErrors = [];
+        $featuredImage = !empty($_POST['clear_featured_image']) ? null : $product['featured_image'];
+        if (!empty($_FILES['featured_image']['name'])) {
+            $errMain = $_FILES['featured_image']['error'] ?? UPLOAD_ERR_NO_FILE;
+            if ($errMain === UPLOAD_ERR_INI_SIZE || $errMain === UPLOAD_ERR_FORM_SIZE) {
+                $imageErrors[] = "La imagen principal supera el límite máximo de 2 MB.";
+            } elseif ($errMain === UPLOAD_ERR_OK) {
+                $uploadedMain = $this->uploadProductImageFile(
+                    $_FILES['featured_image']['tmp_name'],
+                    $_FILES['featured_image']['name'],
+                    'prod_',
+                    $imageErrors,
+                    (int)($_FILES['featured_image']['size'] ?? 0)
+                );
+                if ($uploadedMain !== null) {
+                    $featuredImage = $uploadedMain;
+                }
             }
-        } elseif (isset($_POST['featured_image_url']) && trim($_POST['featured_image_url']) !== '') {
+        } elseif (empty($_POST['clear_featured_image']) && isset($_POST['featured_image_url']) && trim($_POST['featured_image_url']) !== '') {
             $featuredImage = trim($_POST['featured_image_url']);
-        } elseif (!empty($_POST['existing_featured_image'])) {
+        } elseif (empty($_POST['clear_featured_image']) && !empty($_POST['existing_featured_image'])) {
             $featuredImage = trim($_POST['existing_featured_image']);
         }
 
@@ -537,9 +665,11 @@ class AdminController {
             }
         }
 
-        $galleryUploads = $this->uploadProductGalleryFiles('gallery_images');
+        $existingGalCount = (int)(Database::fetch("SELECT COUNT(*) as c FROM " . Database::table('product_images') . " WHERE product_id = ?", [$productId])['c'] ?? 0);
+        $remainingSlots = max(0, self::MAX_GALLERY_IMAGES - $existingGalCount);
+        $galleryUploads = $this->uploadProductGalleryFiles('gallery_images', $imageErrors, $remainingSlots);
         $galleryUrls = is_array($_POST['gallery_urls'] ?? null) ? $_POST['gallery_urls'] : [];
-        $this->saveProductGalleryItems($productId, $galleryUploads, $galleryUrls);
+        $this->saveProductGalleryItems($productId, $galleryUploads, $galleryUrls, $imageErrors);
 
         // Gestión y sincronización de Variantes
         $totalVariantStock = 0;
@@ -550,7 +680,8 @@ class AdminController {
             $variantPrices = $_POST['variant_price'] ?? [];
             $variantComparePrices = $_POST['variant_compare_price'] ?? [];
             $variantQtys = $_POST['variant_qty'] ?? [];
-            $variantImages = $_POST['variant_image_url'] ?? [];
+            $variantExistingImages = $_POST['variant_existing_image'] ?? [];
+            $variantClearImages = $_POST['variant_clear_image'] ?? [];
 
             $savedVariantIds = [];
             $firstVariantPrice = null;
@@ -565,7 +696,12 @@ class AdminController {
                 $vPrice = (isset($variantPrices[$i]) && trim((string)$variantPrices[$i]) !== '') ? max(0, (float)$variantPrices[$i]) : $price;
                 $vComparePrice = (!empty($variantComparePrices[$i]) && trim((string)$variantComparePrices[$i]) !== '') ? max(0, (float)$variantComparePrices[$i]) : null;
                 $vQty = isset($variantQtys[$i]) && trim((string)$variantQtys[$i]) !== '' ? max(0, (int)$variantQtys[$i]) : 0;
-                $vImg = trim($variantImages[$i] ?? '');
+                $vImg = $this->resolveVariantImageAtIndex(
+                    $i,
+                    (string)($variantExistingImages[$i] ?? ''),
+                    !empty($variantClearImages[$i]),
+                    $imageErrors
+                );
                 $totalVariantStock += $vQty;
 
                 if ($firstVariantPrice === null) {
@@ -674,6 +810,9 @@ class AdminController {
         $extraNotice = $_SESSION['flash_plugin_notice'] ?? '';
         unset($_SESSION['flash_plugin_notice']);
 
+        if (!empty($imageErrors)) {
+            $_SESSION['flash_error'] = implode(' ', array_unique($imageErrors));
+        }
         $_SESSION['flash_success'] = 'Producto y variantes actualizados correctamente.' . ($extraNotice ? ' ' . $extraNotice : '');
         header('Location: ' . (defined('APP_URL') ? APP_URL : '') . '/admin/products/edit/' . $productId);
         exit;

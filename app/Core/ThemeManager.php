@@ -406,6 +406,43 @@ class ThemeManager {
         $total = count($slides);
         ob_start();
         ?>
+        <style>
+            .scms-product-gallery-wrap .product-gallery-box {
+                height: 440px;
+                min-height: 360px;
+                overflow: hidden;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                padding: 16px;
+            }
+            .scms-product-gallery-wrap .product-gallery-box img#main_product_image {
+                max-width: 100%;
+                max-height: 100%;
+                width: auto;
+                height: auto;
+                object-fit: contain;
+                display: block;
+            }
+            .scms-product-gallery-wrap .scms-gallery-thumbs {
+                display: flex;
+                gap: 10px;
+                flex-wrap: nowrap;
+                overflow-x: auto;
+                padding-bottom: 4px;
+                scrollbar-width: thin;
+            }
+            .scms-product-gallery-wrap .scms-gallery-thumb {
+                flex-shrink: 0;
+            }
+            @media (max-width: 768px) {
+                .scms-product-gallery-wrap .product-gallery-box {
+                    height: 310px;
+                    min-height: 250px;
+                    padding: 12px;
+                }
+            }
+        </style>
         <div class="scms-product-gallery-wrap" style="display: flex; flex-direction: column; gap: 12px;">
             <div class="product-gallery-box" style="position: relative;">
                 <?php if ($activeSrc !== ''): ?>
