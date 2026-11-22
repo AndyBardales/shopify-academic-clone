@@ -83,18 +83,15 @@ $reviewLabel = ($revCount === 1) ? '1 opinión de clientes' : "{$revCount} opini
     </div>
 
     <div class="product-detail-layout">
-        <!-- FOTO PRINCIPAL TECH -->
-        <div class="product-gallery-box">
-            <?php if (!empty($product['featured_image'])): ?>
-                <img id="main_product_image" src="<?= $baseUrl ?>/<?= htmlspecialchars($initialImage) ?>" alt="<?= htmlspecialchars($product['name']) ?>" style="transition: opacity 0.2s ease;">
-            <?php else: ?>
-                <svg width="80" height="80" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-                    <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
-                    <line x1="8" y1="21" x2="16" y2="21"></line>
-                    <line x1="12" y1="17" x2="12" y2="21"></line>
-                </svg>
-            <?php endif; ?>
-        </div>
+        <!-- GALERÍA TECH MÚLTIPLE -->
+        <?= \ShopCMS\Core\ThemeManager::renderProductGallery(
+            $product,
+            $galleryImages ?? [],
+            $variants ?? [],
+            $initialImage ?? '',
+            $baseUrl,
+            '<svg width="80" height="80" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>'
+        ) ?>
 
         <!-- ESPECIFICACIONES Y COMPRA -->
         <div class="product-info-box">
@@ -350,7 +347,7 @@ $reviewLabel = ($revCount === 1) ? '1 opinión de clientes' : "{$revCount} opini
 const variantsData = <?= json_encode($variants) ?>;
 const baseUrl = "<?= $baseUrl ?>";
 const currencySymbol = "<?= $currency['symbol'] ?>";
-const defaultProductImage = "<?= $baseUrl ?>/<?= htmlspecialchars($product['featured_image']) ?>";
+const defaultProductImage = <?= json_encode(\ShopCMS\Core\ThemeManager::resolveImageUrl(!empty($product['featured_image']) ? $product['featured_image'] : ($galleryImages[0]['image_url'] ?? ''), $baseUrl)) ?>;
 const lowStockThreshold = <?= (int)($product['low_stock_threshold'] ?? 5) ?>;
 const maxParts = <?= (int)$maxParts ?>;
 
@@ -403,9 +400,13 @@ function applyVariant(v) {
     const imgElem = document.getElementById('main_product_image');
     if (imgElem) {
         if (v.image_url && v.image_url.trim() !== '') {
-            imgElem.src = baseUrl + '/' + v.image_url;
-        } else {
+            const rawV = v.image_url.trim();
+            imgElem.src = (/^https?:\/\//i.test(rawV) || rawV.indexOf('/') === 0) ? rawV : (baseUrl + '/' + rawV.replace(/^\/+/, ''));
+        } else if (defaultProductImage) {
             imgElem.src = defaultProductImage;
+        }
+        if (typeof window.syncProductGalleryActive === 'function') {
+            window.syncProductGalleryActive(imgElem.src);
         }
     }
 }

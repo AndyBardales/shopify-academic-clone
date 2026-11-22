@@ -81,16 +81,15 @@ $prodBuiltIn = [];
 <section data-theme-section="product_main" data-section-label="Ficha de Producto" style="padding: 40px 0 20px;">
     <div class="container">
     <div class="product-detail-layout">
-        <!-- FOTO PRINCIPAL -->
-        <div class="product-gallery-box">
-            <?php if (!empty($product['featured_image'])): ?>
-                <img id="main_product_image" src="<?= $baseUrl ?>/<?= htmlspecialchars($initialImage) ?>" alt="<?= htmlspecialchars($product['name']) ?>" style="transition: opacity 0.2s ease;">
-            <?php else: ?>
-                <svg width="96" height="96" viewBox="0 0 24 24" fill="#CBD5E1">
-                    <path d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"/>
-                </svg>
-            <?php endif; ?>
-        </div>
+        <!-- GALERÍA PRINCIPAL MÚLTIPLE -->
+        <?= \ShopCMS\Core\ThemeManager::renderProductGallery(
+            $product,
+            $galleryImages ?? [],
+            $variants ?? [],
+            $initialImage ?? '',
+            $baseUrl,
+            '<svg width="96" height="96" viewBox="0 0 24 24" fill="#CBD5E1"><path d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"/></svg>'
+        ) ?>
 
         <!-- INFO Y FORMULARIO DE COMPRA -->
         <div class="product-info-box">
@@ -387,7 +386,7 @@ $prodBuiltIn = [];
 const variantsData = <?= json_encode($variants) ?>;
 const baseUrl = "<?= $baseUrl ?>";
 const currencySymbol = "<?= $currency['symbol'] ?>";
-const defaultProductImage = "<?= $baseUrl ?>/<?= htmlspecialchars($product['featured_image']) ?>";
+const defaultProductImage = <?= json_encode(\ShopCMS\Core\ThemeManager::resolveImageUrl(!empty($product['featured_image']) ? $product['featured_image'] : ($galleryImages[0]['image_url'] ?? ''), $baseUrl)) ?>;
 const lowStockThreshold = <?= (int)($product['low_stock_threshold'] ?? 5) ?>;
 const maxParts = <?= (int)$maxParts ?>;
 
@@ -437,9 +436,13 @@ function applyVariant(v) {
     const imgElem = document.getElementById('main_product_image');
     if (imgElem) {
         if (v.image_url && v.image_url.trim() !== '') {
-            imgElem.src = baseUrl + '/' + v.image_url;
-        } else {
+            const rawV = v.image_url.trim();
+            imgElem.src = (/^https?:\/\//i.test(rawV) || rawV.indexOf('/') === 0) ? rawV : (baseUrl + '/' + rawV.replace(/^\/+/, ''));
+        } else if (defaultProductImage) {
             imgElem.src = defaultProductImage;
+        }
+        if (typeof window.syncProductGalleryActive === 'function') {
+            window.syncProductGalleryActive(imgElem.src);
         }
     }
 }

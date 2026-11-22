@@ -281,8 +281,31 @@
 
                     <div class="form-group">
                         <label for="featured_image_url">O escribir URL / ruta de imagen</label>
-                        <input type="text" id="featured_image_url" name="featured_image_url" class="form-control" placeholder="assets/images/sample-product.svg">
+                        <input type="text" id="featured_image_url" name="featured_image_url" class="form-control" placeholder="uploads/products/..." >
                     </div>
+                </div>
+            </div>
+
+            <!-- GALERÍA MÚLTIPLE DE IMÁGENES -->
+            <div class="polaris-card">
+                <div class="card-header">
+                    <h2 class="card-title">Galería Adicional de Imágenes</h2>
+                </div>
+                <div class="card-body">
+                    <div class="form-group">
+                        <label for="gallery_images">Subir varias fotos (ángulos o detalles)</label>
+                        <input type="file" id="gallery_images" name="gallery_images[]" class="form-control" accept="image/*" multiple onchange="previewGalleryFiles(this)">
+                        <small style="color: var(--color-text-secondary); font-size: 11px;">Puedes seleccionar múltiples archivos a la vez.</small>
+                    </div>
+                    <div id="gallery_files_preview" style="display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px;"></div>
+
+                    <div class="form-group" style="margin-bottom: 8px;">
+                        <label style="font-size: 12.5px;">O añadir URLs / rutas adicionales</label>
+                        <div id="gallery_urls_container" style="display: flex; flex-direction: column; gap: 6px;">
+                            <input type="text" name="gallery_urls[]" class="form-control" placeholder="https://... o uploads/products/...">
+                        </div>
+                    </div>
+                    <button type="button" class="btn btn-secondary btn-sm" onclick="addGalleryUrlInput()">+ Agregar otra URL</button>
                 </div>
             </div>
 

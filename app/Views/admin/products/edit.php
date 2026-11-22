@@ -333,8 +333,58 @@
 
                     <div class="form-group">
                         <label for="featured_image_url">O escribir URL / ruta de imagen</label>
-                        <input type="text" id="featured_image_url" name="featured_image_url" class="form-control" placeholder="assets/images/producto.svg" value="<?= htmlspecialchars($product['featured_image'] ?? '') ?>">
+                        <input type="text" id="featured_image_url" name="featured_image_url" class="form-control" placeholder="uploads/products/..." value="<?= htmlspecialchars($product['featured_image'] ?? '') ?>">
                     </div>
+                </div>
+            </div>
+
+            <!-- GALERÍA MÚLTIPLE DE IMÁGENES -->
+            <div class="polaris-card">
+                <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+                    <h2 class="card-title">Galería Adicional</h2>
+                    <span class="badge badge-info"><?= count($galleryImages ?? []) ?> foto(s)</span>
+                </div>
+                <div class="card-body">
+                    <?php if (!empty($galleryImages)): ?>
+                        <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 14px;">
+                            <?php foreach ($galleryImages as $gi):
+                                $gPath = trim((string)$gi['image_url']);
+                                $gSrc = (preg_match('#^https?://#i', $gPath) || str_starts_with($gPath, '/')) ? $gPath : ($baseUrl . '/' . ltrim($gPath, '/'));
+                            ?>
+                                <div style="border: 1px solid #E5E7EB; border-radius: 8px; padding: 8px; background: #F9FAFB; display: flex; flex-direction: column; gap: 6px;">
+                                    <div style="height: 82px; border-radius: 6px; overflow: hidden; background: #FFF; border: 1px solid #E5E7EB; display: flex; align-items: center; justify-content: center;">
+                                        <img src="<?= htmlspecialchars($gSrc) ?>" alt="Galería" style="max-width: 100%; max-height: 100%; object-fit: cover;">
+                                    </div>
+                                    <div style="display: flex; align-items: center; justify-content: space-between; gap: 4px; font-size: 11px;">
+                                        <label style="display: inline-flex; align-items: center; gap: 4px; cursor: pointer; color: #374151;">
+                                            <input type="radio" name="promote_gallery_id" value="<?= (int)$gi['id'] ?>">
+                                            <span>Principal</span>
+                                        </label>
+                                        <input type="number" name="existing_gallery_order[<?= (int)$gi['id'] ?>]" value="<?= (int)($gi['sort_order'] ?? 0) ?>" title="Orden" style="width: 44px; padding: 2px 4px; border: 1px solid #D1D5DB; border-radius: 4px; font-size: 11px; text-align: center;">
+                                    </div>
+                                    <label style="display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: #B91C1C; font-weight: 600; cursor: pointer;">
+                                        <input type="checkbox" name="delete_gallery_ids[]" value="<?= (int)$gi['id'] ?>" style="accent-color: #DC2626;">
+                                        <span>Eliminar</span>
+                                    </label>
+                                </div>
+                            <?php endforeach; ?>
+                        </div>
+                    <?php endif; ?>
+
+                    <div class="form-group">
+                        <label for="gallery_images">Subir más fotos</label>
+                        <input type="file" id="gallery_images" name="gallery_images[]" class="form-control" accept="image/*" multiple onchange="previewGalleryFiles(this)">
+                        <small style="color: var(--color-text-secondary); font-size: 11px;">Puedes seleccionar varias imágenes a la vez.</small>
+                    </div>
+                    <div id="gallery_files_preview" style="display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px;"></div>
+
+                    <div class="form-group" style="margin-bottom: 8px;">
+                        <label style="font-size: 12.5px;">O añadir URLs / rutas</label>
+                        <div id="gallery_urls_container" style="display: flex; flex-direction: column; gap: 6px;">
+                            <input type="text" name="gallery_urls[]" class="form-control" placeholder="https://... o uploads/products/...">
+                        </div>
+                    </div>
+                    <button type="button" class="btn btn-secondary btn-sm" onclick="addGalleryUrlInput()">+ Agregar otra URL</button>
                 </div>
             </div>
 

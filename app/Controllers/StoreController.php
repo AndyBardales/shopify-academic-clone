@@ -151,6 +151,14 @@ class StoreController {
         // Variantes
         $variants = Database::fetchAll("SELECT * FROM " . Database::table('product_variants') . " WHERE product_id = ? ORDER BY id ASC", [$product['id']]);
 
+        // Galería adicional de imágenes
+        $galleryImages = [];
+        try {
+            $galleryImages = Database::fetchAll("SELECT * FROM " . Database::table('product_images') . " WHERE product_id = ? ORDER BY sort_order ASC, id ASC", [$product['id']]);
+        } catch (\Throwable $e) {
+            $galleryImages = [];
+        }
+
         // Reseñas aprobadas (destacadas primero)
         $reviews = Database::fetchAll("SELECT * FROM " . Database::table('reviews') . " WHERE product_id = ? AND status = 'approved' ORDER BY is_featured DESC, id DESC", [$product['id']]);
         
@@ -163,6 +171,7 @@ class StoreController {
         ThemeManager::render('product', [
             'product' => $product,
             'variants' => $variants,
+            'galleryImages' => $galleryImages,
             'reviews' => $reviews,
             'avgRating' => $avgRating,
             'currency' => $this->getCurrency()

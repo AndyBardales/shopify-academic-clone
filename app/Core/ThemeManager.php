@@ -340,4 +340,206 @@ class ThemeManager {
         $baseUrl = defined('APP_URL') ? APP_URL : '';
         return $baseUrl . '/themes/' . $theme . '/assets/' . ltrim($asset, '/');
     }
+
+    public static function resolveImageUrl(string $path, string $baseUrl): string {
+        $path = trim($path);
+        if ($path === '') return '';
+        if (preg_match('#^https?://#i', $path) || str_starts_with($path, '/')) {
+            return $path;
+        }
+        return rtrim($baseUrl, '/') . '/' . ltrim($path, '/');
+    }
+
+    /**
+     * Renderiza la galería múltiple interactiva con miniaturas y lightbox en la ficha de producto.
+     */
+    public static function renderProductGallery(
+        array $product,
+        array $galleryImages,
+        array $variants,
+        ?string $initialImage,
+        string $baseUrl,
+        string $fallbackSvg
+    ): string {
+        $slides = [];
+        $seen = [];
+        $pushSlide = function (?string $rawPath, string $label = '') use (&$slides, &$seen, $baseUrl): void {
+            $rawPath = trim((string)$rawPath);
+            if ($rawPath === '') return;
+            $resolved = self::resolveImageUrl($rawPath, $baseUrl);
+            if ($resolved === '' || isset($seen[$resolved])) return;
+            $seen[$resolved] = true;
+            $slides[] = [
+                'raw' => $rawPath,
+                'src' => $resolved,
+                'alt' => $label,
+            ];
+        };
+
+        $prodName = (string)($product['name'] ?? 'Producto');
+        $pushSlide($product['featured_image'] ?? '', $prodName);
+        foreach ($galleryImages as $gi) {
+            $pushSlide($gi['image_url'] ?? '', $prodName);
+        }
+        foreach ($variants as $v) {
+            if (!empty($v['image_url'])) {
+                $pushSlide($v['image_url'], $prodName . ' - ' . (string)($v['title'] ?? ''));
+            }
+        }
+
+        $activeSrc = '';
+        $initRaw = trim((string)$initialImage);
+        if ($initRaw !== '') {
+            $activeSrc = self::resolveImageUrl($initRaw, $baseUrl);
+        } elseif (!empty($slides)) {
+            $activeSrc = $slides[0]['src'];
+        }
+
+        $activeIdx = 0;
+        foreach ($slides as $idx => $s) {
+            if ($s['src'] === $activeSrc) {
+                $activeIdx = $idx;
+                break;
+            }
+        }
+
+        $total = count($slides);
+        ob_start();
+        ?>
+        <div class="scms-product-gallery-wrap" style="display: flex; flex-direction: column; gap: 12px;">
+            <div class="product-gallery-box" style="position: relative;">
+                <?php if ($activeSrc !== ''): ?>
+                    <img id="main_product_image"
+                         src="<?= htmlspecialchars($activeSrc) ?>"
+                         alt="<?= htmlspecialchars($prodName) ?>"
+                         onclick="scmsOpenGalleryLightbox()"
+                         title="Haz clic para ampliar"
+                         style="cursor: zoom-in; transition: opacity 0.18s ease;">
+                    <button type="button" onclick="scmsOpenGalleryLightbox()" aria-label="Ampliar imagen" title="Ampliar imagen" style="position: absolute; top: 12px; right: 12px; width: 34px; height: 34px; border-radius: 999px; border: 1px solid rgba(0,0,0,0.08); background: rgba(255,255,255,0.9); color: #111827; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; box-shadow: 0 2px 8px rgba(0,0,0,0.08);">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
+                    </button>
+                    <?php if ($total > 1): ?>
+                        <button type="button" onclick="scmsGalleryStep(-1)" aria-label="Imagen anterior" style="position: absolute; left: 10px; top: 50%; transform: translateY(-50%); width: 34px; height: 34px; border-radius: 999px; border: 1px solid rgba(0,0,0,0.08); background: rgba(255,255,255,0.92); color: #111827; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="15 18 9 12 15 6"/></svg>
+                        </button>
+                        <button type="button" onclick="scmsGalleryStep(1)" aria-label="Siguiente imagen" style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); width: 34px; height: 34px; border-radius: 999px; border: 1px solid rgba(0,0,0,0.08); background: rgba(255,255,255,0.92); color: #111827; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="9 18 15 12 9 6"/></svg>
+                        </button>
+                        <span id="scms_gallery_counter" style="position: absolute; bottom: 10px; right: 12px; background: rgba(17,24,39,0.72); color: #FFFFFF; padding: 3px 9px; border-radius: 999px; font-size: 11px; font-weight: 700;">
+                            <?= ($activeIdx + 1) ?> / <?= $total ?>
+                        </span>
+                    <?php endif; ?>
+                <?php else: ?>
+                    <?= $fallbackSvg ?>
+                <?php endif; ?>
+            </div>
+
+            <?php if ($total > 1): ?>
+                <div class="scms-gallery-thumbs" id="scms_gallery_thumbs" style="display: flex; gap: 10px; flex-wrap: wrap;">
+                    <?php foreach ($slides as $idx => $s):
+                        $isAct = ($idx === $activeIdx);
+                    ?>
+                        <button type="button"
+                                class="scms-gallery-thumb <?= $isAct ? 'is-active' : '' ?>"
+                                data-idx="<?= $idx ?>"
+                                data-src="<?= htmlspecialchars($s['src']) ?>"
+                                onclick="scmsSelectGalleryIndex(<?= $idx ?>)"
+                                aria-label="Ver imagen <?= $idx + 1 ?>"
+                                style="width: 68px; height: 68px; padding: 3px; border-radius: 8px; border: 2px solid <?= $isAct ? 'var(--color-primary, #008060)' : 'var(--color-border, #E5E7EB)' ?>; background: var(--color-surface, #FFFFFF); cursor: pointer; overflow: hidden; display: inline-flex; align-items: center; justify-content: center; transition: border-color 0.15s, transform 0.15s;">
+                            <img src="<?= htmlspecialchars($s['src']) ?>" alt="<?= htmlspecialchars($s['alt']) ?>" style="width: 100%; height: 100%; object-fit: cover; border-radius: 5px;">
+                        </button>
+                    <?php endforeach; ?>
+                </div>
+            <?php endif; ?>
+        </div>
+
+        <?php if ($total > 0): ?>
+            <div id="scms_gallery_lightbox" onclick="if(event.target===this)scmsCloseGalleryLightbox()" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.85); z-index: 10050; align-items: center; justify-content: center; padding: 24px;">
+                <button type="button" onclick="scmsCloseGalleryLightbox()" aria-label="Cerrar visor" style="position: fixed; top: 18px; right: 22px; width: 40px; height: 40px; border-radius: 999px; border: none; background: rgba(255,255,255,0.16); color: #FFFFFF; font-size: 24px; cursor: pointer; line-height: 1;">&times;</button>
+                <?php if ($total > 1): ?>
+                    <button type="button" onclick="scmsGalleryStep(-1)" aria-label="Imagen anterior" style="position: fixed; left: 20px; top: 50%; transform: translateY(-50%); width: 42px; height: 42px; border-radius: 999px; border: none; background: rgba(255,255,255,0.18); color: #FFFFFF; cursor: pointer; display: inline-flex; align-items: center; justify-content: center;">
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="15 18 9 12 15 6"/></svg>
+                    </button>
+                <?php endif; ?>
+                <img id="scms_lightbox_img" src="<?= htmlspecialchars($activeSrc) ?>" alt="<?= htmlspecialchars($prodName) ?>" style="max-width: 90vw; max-height: 85vh; object-fit: contain; border-radius: 10px; box-shadow: 0 20px 50px rgba(0,0,0,0.4);">
+                <?php if ($total > 1): ?>
+                    <button type="button" onclick="scmsGalleryStep(1)" aria-label="Siguiente imagen" style="position: fixed; right: 20px; top: 50%; transform: translateY(-50%); width: 42px; height: 42px; border-radius: 999px; border: none; background: rgba(255,255,255,0.18); color: #FFFFFF; cursor: pointer; display: inline-flex; align-items: center; justify-content: center;">
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="9 18 15 12 9 6"/></svg>
+                    </button>
+                    <div id="scms_lightbox_counter" style="position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); color: #FFFFFF; font-size: 13px; font-weight: 700; background: rgba(0,0,0,0.55); padding: 4px 12px; border-radius: 999px;">
+                        <?= ($activeIdx + 1) ?> / <?= $total ?>
+                    </div>
+                <?php endif; ?>
+            </div>
+
+            <script>
+            (function() {
+                var slides = <?= json_encode(array_column($slides, 'src'), JSON_UNESCAPED_SLASHES) ?>;
+                var curIdx = <?= (int)$activeIdx ?>;
+
+                function applyGalleryUI(idx) {
+                    if (!slides.length) return;
+                    curIdx = ((idx % slides.length) + slides.length) % slides.length;
+                    var src = slides[curIdx];
+                    var mainImg = document.getElementById('main_product_image');
+                    var lbImg = document.getElementById('scms_lightbox_img');
+                    if (mainImg) mainImg.src = src;
+                    if (lbImg) lbImg.src = src;
+
+                    var cnt = document.getElementById('scms_gallery_counter');
+                    var lbCnt = document.getElementById('scms_lightbox_counter');
+                    if (cnt) cnt.textContent = (curIdx + 1) + ' / ' + slides.length;
+                    if (lbCnt) lbCnt.textContent = (curIdx + 1) + ' / ' + slides.length;
+
+                    document.querySelectorAll('#scms_gallery_thumbs .scms-gallery-thumb').forEach(function(btn, i) {
+                        var active = (i === curIdx);
+                        btn.classList.toggle('is-active', active);
+                        btn.style.borderColor = active ? 'var(--color-primary, #008060)' : 'var(--color-border, #E5E7EB)';
+                    });
+                }
+
+                window.scmsSelectGalleryIndex = function(idx) {
+                    applyGalleryUI(idx);
+                };
+                window.scmsGalleryStep = function(delta) {
+                    applyGalleryUI(curIdx + delta);
+                };
+                window.scmsOpenGalleryLightbox = function() {
+                    var lb = document.getElementById('scms_gallery_lightbox');
+                    var mainImg = document.getElementById('main_product_image');
+                    var lbImg = document.getElementById('scms_lightbox_img');
+                    if (mainImg && lbImg) lbImg.src = mainImg.src;
+                    if (lb) lb.style.display = 'flex';
+                };
+                window.scmsCloseGalleryLightbox = function() {
+                    var lb = document.getElementById('scms_gallery_lightbox');
+                    if (lb) lb.style.display = 'none';
+                };
+                window.syncProductGalleryActive = function(src) {
+                    var idx = slides.indexOf(src);
+                    if (idx !== -1) {
+                        curIdx = idx;
+                        var cnt = document.getElementById('scms_gallery_counter');
+                        var lbCnt = document.getElementById('scms_lightbox_counter');
+                        if (cnt) cnt.textContent = (curIdx + 1) + ' / ' + slides.length;
+                        if (lbCnt) lbCnt.textContent = (curIdx + 1) + ' / ' + slides.length;
+                        document.querySelectorAll('#scms_gallery_thumbs .scms-gallery-thumb').forEach(function(btn, i) {
+                            var active = (i === curIdx);
+                            btn.classList.toggle('is-active', active);
+                            btn.style.borderColor = active ? 'var(--color-primary, #008060)' : 'var(--color-border, #E5E7EB)';
+                        });
+                    }
+                };
+                document.addEventListener('keydown', function(e) {
+                    var lb = document.getElementById('scms_gallery_lightbox');
+                    if (!lb || lb.style.display !== 'flex') return;
+                    if (e.key === 'Escape') window.scmsCloseGalleryLightbox();
+                    if (e.key === 'ArrowRight') window.scmsGalleryStep(1);
+                    if (e.key === 'ArrowLeft') window.scmsGalleryStep(-1);
+                });
+            })();
+            </script>
+        <?php endif;
+        return ob_get_clean();
+    }
 }

@@ -74,18 +74,15 @@ $reviewLabel = ($revCount === 1) ? '1 opinión de clientes' : "{$revCount} opini
 
 <main class="container" style="padding-top: 50px; padding-bottom: 90px;">
     <div class="product-detail-layout">
-        <!-- FOTO PRINCIPAL EDITORIAL -->
-        <div class="product-gallery-box">
-            <?php if (!empty($product['featured_image'])): ?>
-                <img id="main_product_image" src="<?= $baseUrl ?>/<?= htmlspecialchars($initialImage) ?>" alt="<?= htmlspecialchars($product['name']) ?>" style="transition: opacity 0.2s ease;">
-            <?php else: ?>
-                <svg width="80" height="80" viewBox="0 0 24 24" fill="none" stroke="#A3A3A3" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round">
-                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
-                    <circle cx="8.5" cy="8.5" r="1.5"></circle>
-                    <polyline points="21 15 16 10 5 21"></polyline>
-                </svg>
-            <?php endif; ?>
-        </div>
+        <!-- GALERÍA EDITORIAL MÚLTIPLE -->
+        <?= \ShopCMS\Core\ThemeManager::renderProductGallery(
+            $product,
+            $galleryImages ?? [],
+            $variants ?? [],
+            $initialImage ?? '',
+            $baseUrl,
+            '<svg width="80" height="80" viewBox="0 0 24 24" fill="none" stroke="#A3A3A3" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>'
+        ) ?>
 
         <!-- INFORMACIÓN EDITORIAL -->
         <div class="product-info-box">
@@ -315,7 +312,7 @@ $reviewLabel = ($revCount === 1) ? '1 opinión de clientes' : "{$revCount} opini
 const variantsData = <?= json_encode($variants) ?>;
 const baseUrl = "<?= $baseUrl ?>";
 const currencySymbol = "<?= $currency['symbol'] ?>";
-const defaultProductImage = "<?= $baseUrl ?>/<?= htmlspecialchars($product['featured_image']) ?>";
+const defaultProductImage = <?= json_encode(\ShopCMS\Core\ThemeManager::resolveImageUrl(!empty($product['featured_image']) ? $product['featured_image'] : ($galleryImages[0]['image_url'] ?? ''), $baseUrl)) ?>;
 const lowStockThreshold = <?= (int)($product['low_stock_threshold'] ?? 5) ?>;
 const maxParts = <?= (int)$maxParts ?>;
 
@@ -365,9 +362,13 @@ function applyVariant(v) {
     const imgElem = document.getElementById('main_product_image');
     if (imgElem) {
         if (v.image_url && v.image_url.trim() !== '') {
-            imgElem.src = baseUrl + '/' + v.image_url;
-        } else {
+            const rawV = v.image_url.trim();
+            imgElem.src = (/^https?:\/\//i.test(rawV) || rawV.indexOf('/') === 0) ? rawV : (baseUrl + '/' + rawV.replace(/^\/+/, ''));
+        } else if (defaultProductImage) {
             imgElem.src = defaultProductImage;
+        }
+        if (typeof window.syncProductGalleryActive === 'function') {
+            window.syncProductGalleryActive(imgElem.src);
         }
     }
 }

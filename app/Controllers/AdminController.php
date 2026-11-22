@@ -155,6 +155,114 @@ class AdminController {
         ]);
     }
 
+    private function uploadProductImageFile(string $tmpName, string $originalName, string $prefix = 'prod_'): ?string {
+        $ext = strtolower(pathinfo($originalName, PATHINFO_EXTENSION));
+        $allowed = ['jpg', 'jpeg', 'png', 'webp', 'gif', 'svg'];
+        if ($ext === '' || !in_array($ext, $allowed, true)) {
+            return null;
+        }
+        $uploadDir = dirname(__DIR__, 2) . '/uploads/products/';
+        if (!is_dir($uploadDir)) {
+            @mkdir($uploadDir, 0777, true);
+        }
+        $fileName = uniqid($prefix) . '.' . $ext;
+        if (move_uploaded_file($tmpName, $uploadDir . $fileName)) {
+            return 'uploads/products/' . $fileName;
+        }
+        return null;
+    }
+
+    private function uploadProductGalleryFiles(string $fieldName = 'gallery_images'): array {
+        $paths = [];
+        if (empty($_FILES[$fieldName]) || !is_array($_FILES[$fieldName]['name'] ?? null)) {
+            return $paths;
+        }
+        $names = $_FILES[$fieldName]['name'];
+        $tmps = $_FILES[$fieldName]['tmp_name'] ?? [];
+        $errs = $_FILES[$fieldName]['error'] ?? [];
+        $count = count($names);
+        for ($i = 0; $i < $count; $i++) {
+            if (!empty($names[$i]) && ($errs[$i] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_OK && !empty($tmps[$i])) {
+                $saved = $this->uploadProductImageFile($tmps[$i], $names[$i], 'prod_gal_');
+                if ($saved !== null) {
+                    $paths[] = $saved;
+                }
+            }
+        }
+        return $paths;
+    }
+
+    private function saveProductGalleryItems(int $productId, array $uploadedPaths, array $urlInputs): void {
+        if ($productId <= 0) return;
+        $existing = Database::fetchAll("SELECT image_url, sort_order FROM " . Database::table('product_images') . " WHERE product_id = ?", [$productId]);
+        $seen = [];
+        $maxOrder = 0;
+        foreach ($existing as $row) {
+            $seen[trim((string)$row['image_url'])] = true;
+            $ord = (int)($row['sort_order'] ?? 0);
+            if ($ord > $maxOrder) $maxOrder = $ord;
+        }
+
+        $candidates = [];
+        foreach ($uploadedPaths as $p) {
+            $p = trim((string)$p);
+            if ($p !== '') $candidates[] = $p;
+        }
+        foreach ($urlInputs as $u) {
+            $u = trim((string)$u);
+            if ($u !== '') $candidates[] = $u;
+        }
+
+        foreach ($candidates as $path) {
+            if (isset($seen[$path])) continue;
+            $seen[$path] = true;
+            $maxOrder += 1;
+            Database::insert('product_images', [
+                'product_id' => $productId,
+                'image_url' => $path,
+                'sort_order' => $maxOrder
+            ]);
+        }
+    }
+
+    private function deleteProductGalleryItems(int $productId, array $deleteIds): void {
+        $cleanIds = array_values(array_unique(array_filter(array_map('intval', $deleteIds), fn($n) => $n > 0)));
+        if ($productId <= 0 || empty($cleanIds)) return;
+
+        $placeholders = implode(',', array_fill(0, count($cleanIds), '?'));
+        $params = array_merge([$productId], $cleanIds);
+        $rows = Database::fetchAll(
+            "SELECT id, image_url FROM " . Database::table('product_images') . " WHERE product_id = ? AND id IN ({$placeholders})",
+            $params
+        );
+        if (empty($rows)) return;
+
+        Database::query(
+            "DELETE FROM " . Database::table('product_images') . " WHERE product_id = ? AND id IN ({$placeholders})",
+            $params
+        );
+
+        foreach ($rows as $row) {
+            $img = trim((string)($row['image_url'] ?? ''));
+            if ($img !== '' && str_starts_with($img, 'uploads/products/')) {
+                $usedElsewhere = Database::fetch(
+                    "SELECT 1 FROM " . Database::table('products') . " WHERE featured_image = ? LIMIT 1",
+                    [$img]
+                ) || Database::fetch(
+                    "SELECT 1 FROM " . Database::table('product_variants') . " WHERE image_url = ? LIMIT 1",
+                    [$img]
+                ) || Database::fetch(
+                    "SELECT 1 FROM " . Database::table('product_images') . " WHERE image_url = ? LIMIT 1",
+                    [$img]
+                );
+                if (!$usedElsewhere) {
+                    $abs = dirname(__DIR__, 2) . '/' . $img;
+                    if (is_file($abs)) @unlink($abs);
+                }
+            }
+        }
+    }
+
     public function productCreate(): void {
         $categories = Database::fetchAll("
             SELECT c.*, p.name as parent_name 
@@ -213,20 +321,17 @@ class AdminController {
             }
         }
 
-        // Subida de imagen destacada
+        // Subida de imagen destacada y galería adicional
         $featuredImage = null;
         if (!empty($_FILES['featured_image']['name']) && $_FILES['featured_image']['error'] === UPLOAD_ERR_OK) {
-            $uploadDir = dirname(__DIR__, 2) . '/uploads/products/';
-            if (!is_dir($uploadDir)) {
-                @mkdir($uploadDir, 0777, true);
-            }
-            $ext = strtolower(pathinfo($_FILES['featured_image']['name'], PATHINFO_EXTENSION));
-            $fileName = uniqid('prod_') . '.' . $ext;
-            if (move_uploaded_file($_FILES['featured_image']['tmp_name'], $uploadDir . $fileName)) {
-                $featuredImage = 'uploads/products/' . $fileName;
-            }
+            $featuredImage = $this->uploadProductImageFile($_FILES['featured_image']['tmp_name'], $_FILES['featured_image']['name'], 'prod_');
         } elseif (!empty($_POST['featured_image_url'])) {
             $featuredImage = trim($_POST['featured_image_url']);
+        }
+        $galleryUploads = $this->uploadProductGalleryFiles('gallery_images');
+        $galleryUrls = is_array($_POST['gallery_urls'] ?? null) ? $_POST['gallery_urls'] : [];
+        if (($featuredImage === null || $featuredImage === '') && !empty($galleryUploads)) {
+            $featuredImage = $galleryUploads[0];
         }
 
         // Procesar Variantes y sincronizar precio/stock maestro si tiene variantes habilitadas
@@ -319,6 +424,9 @@ class AdminController {
             InventoryManager::logMovement((int)$productId, null, 0, (int)$quantity, 'catalog_sync', 'Catálogo', 'Stock inicial al crear producto');
         }
 
+        // Guardar galería múltiple de imágenes
+        $this->saveProductGalleryItems((int)$productId, $galleryUploads, $galleryUrls);
+
         $_SESSION['flash_success'] = 'Producto creado exitosamente.';
         header('Location: ' . (defined('APP_URL') ? APP_URL : '') . '/admin/products');
         exit;
@@ -339,6 +447,7 @@ class AdminController {
         }
 
         $variants = Database::fetchAll("SELECT * FROM " . Database::table('product_variants') . " WHERE product_id = ? ORDER BY id ASC", [(int)$id]);
+        $galleryImages = Database::fetchAll("SELECT * FROM " . Database::table('product_images') . " WHERE product_id = ? ORDER BY sort_order ASC, id ASC", [(int)$id]);
         $categories = Database::fetchAll("
             SELECT c.*, p.name as parent_name 
             FROM " . Database::table('categories') . " c 
@@ -352,6 +461,7 @@ class AdminController {
         $this->render('products/edit', [
             'product' => $product,
             'variants' => $variants,
+            'galleryImages' => $galleryImages,
             'categories' => $categories,
             'currency' => $currency,
             'industry' => $industry
@@ -391,20 +501,45 @@ class AdminController {
         // Subida o conservación de imagen destacada
         $featuredImage = $product['featured_image'];
         if (!empty($_FILES['featured_image']['name']) && $_FILES['featured_image']['error'] === UPLOAD_ERR_OK) {
-            $uploadDir = dirname(__DIR__, 2) . '/uploads/products/';
-            if (!is_dir($uploadDir)) {
-                @mkdir($uploadDir, 0777, true);
-            }
-            $ext = strtolower(pathinfo($_FILES['featured_image']['name'], PATHINFO_EXTENSION));
-            $fileName = uniqid('prod_') . '.' . $ext;
-            if (move_uploaded_file($_FILES['featured_image']['tmp_name'], $uploadDir . $fileName)) {
-                $featuredImage = 'uploads/products/' . $fileName;
+            $uploadedMain = $this->uploadProductImageFile($_FILES['featured_image']['tmp_name'], $_FILES['featured_image']['name'], 'prod_');
+            if ($uploadedMain !== null) {
+                $featuredImage = $uploadedMain;
             }
         } elseif (isset($_POST['featured_image_url']) && trim($_POST['featured_image_url']) !== '') {
             $featuredImage = trim($_POST['featured_image_url']);
         } elseif (!empty($_POST['existing_featured_image'])) {
             $featuredImage = trim($_POST['existing_featured_image']);
         }
+
+        // Gestión de galería múltiple de imágenes (eliminar, reordenar, promover, añadir nuevas)
+        $deleteGalleryIds = is_array($_POST['delete_gallery_ids'] ?? null) ? $_POST['delete_gallery_ids'] : [];
+        $this->deleteProductGalleryItems($productId, $deleteGalleryIds);
+
+        if (!empty($_POST['existing_gallery_order']) && is_array($_POST['existing_gallery_order'])) {
+            foreach ($_POST['existing_gallery_order'] as $gid => $ord) {
+                $gidInt = (int)$gid;
+                if ($gidInt > 0 && !in_array((string)$gidInt, array_map('strval', $deleteGalleryIds), true)) {
+                    Database::query(
+                        "UPDATE " . Database::table('product_images') . " SET sort_order = ? WHERE id = ? AND product_id = ?",
+                        [(int)$ord, $gidInt, $productId]
+                    );
+                }
+            }
+        }
+
+        if (!empty($_POST['promote_gallery_id'])) {
+            $promoteRow = Database::fetch(
+                "SELECT image_url FROM " . Database::table('product_images') . " WHERE id = ? AND product_id = ?",
+                [(int)$_POST['promote_gallery_id'], $productId]
+            );
+            if ($promoteRow && !empty($promoteRow['image_url'])) {
+                $featuredImage = trim((string)$promoteRow['image_url']);
+            }
+        }
+
+        $galleryUploads = $this->uploadProductGalleryFiles('gallery_images');
+        $galleryUrls = is_array($_POST['gallery_urls'] ?? null) ? $_POST['gallery_urls'] : [];
+        $this->saveProductGalleryItems($productId, $galleryUploads, $galleryUrls);
 
         // Gestión y sincronización de Variantes
         $totalVariantStock = 0;

@@ -154,6 +154,32 @@ $baseUrl = defined('APP_URL') ? APP_URL : '';
     </main>
 </div>
 
+<script>
+function previewGalleryFiles(input) {
+    const box = document.getElementById('gallery_files_preview');
+    if (!box) return;
+    box.innerHTML = '';
+    if (!input || !input.files) return;
+    Array.from(input.files).forEach(file => {
+        if (!file.type.startsWith('image/')) return;
+        const img = document.createElement('img');
+        img.src = URL.createObjectURL(file);
+        img.alt = file.name;
+        img.style.cssText = 'width:62px;height:62px;object-fit:cover;border-radius:6px;border:1px solid #D1D5DB;';
+        box.appendChild(img);
+    });
+}
+function addGalleryUrlInput() {
+    const cont = document.getElementById('gallery_urls_container');
+    if (!cont) return;
+    const inp = document.createElement('input');
+    inp.type = 'text';
+    inp.name = 'gallery_urls[]';
+    inp.className = 'form-control';
+    inp.placeholder = 'https://... o uploads/products/...';
+    cont.appendChild(inp);
+}
+</script>
 <script src="<?= $baseUrl ?>/assets/js/shopcms-guard.js?v=20261122b"></script>
 </body>
 </html>
