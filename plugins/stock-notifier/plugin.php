@@ -26,11 +26,26 @@ if (!function_exists('scms_stock_notifier_get_queue')) {
     }
 }
 
-// 1. Formulario real de suscripción en producto agotado
+// 1. Formulario real de suscripción en producto agotado (solo clientes autenticados)
 PluginManager::addAction('product_page_buttons', function ($product) {
     if ((int)$product['quantity'] <= 0) {
         $baseUrl = defined('APP_URL') ? APP_URL : '';
         $pid = (int)$product['id'];
+        $customer = \ShopCMS\Core\Auth::customer();
+        if (!$customer) {
+            $loginHref = $baseUrl . '/login?auth_msg=stock_notify&redirect=' . urlencode('/product/' . ($product['slug'] ?? ''));
+            echo '
+            <div style="margin-top: 16px; background: #FFFBEB; border: 1px solid #FCD34D; border-radius: 8px; padding: 14px;">
+                <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px; color: #92400E; font-weight: 700; font-size: 13.5px;">
+                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg>
+                    <span>Producto temporalmente agotado</span>
+                </div>
+                <p style="font-size: 12px; color: #78350F; margin-bottom: 10px; line-height: 1.4;">Inicia sesión con tu cuenta de cliente para activar avisos de reposición de stock.</p>
+                <a href="' . htmlspecialchars($loginHref) . '" style="display: inline-block; background: #D97706; color: #FFF; padding: 8px 14px; border-radius: 6px; font-size: 12.5px; font-weight: 600; text-decoration: none;">Iniciar sesión para avisarme</a>
+            </div>';
+            return;
+        }
+        $custEmail = htmlspecialchars($customer['email'] ?? '');
         echo '
         <div style="margin-top: 16px; background: #FFFBEB; border: 1px solid #FCD34D; border-radius: 8px; padding: 16px;">
             <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px; color: #92400E; font-weight: 700; font-size: 14px;">
@@ -41,10 +56,10 @@ PluginManager::addAction('product_page_buttons', function ($product) {
                 <span>Avisarme cuando haya existencias</span>
             </div>
             <p style="font-size: 12px; color: #78350F; margin-bottom: 12px; line-height: 1.4;">
-                Ingresa tu correo electrónico y recibirás un aviso prioritario apenas repongamos stock en almacén.
+                Recibirás un aviso prioritario en tu correo apenas repongamos stock en almacén.
             </p>
             <div id="stock_notify_box_' . $pid . '" style="display: flex; gap: 8px; flex-wrap: wrap;">
-                <input type="email" id="stock_notify_email_' . $pid . '" placeholder="tu-correo@ejemplo.com" style="flex: 1; min-width: 180px; padding: 8px 12px; border: 1px solid #D1D5DB; border-radius: 6px; font-size: 13px;">
+                <input type="email" id="stock_notify_email_' . $pid . '" value="' . $custEmail . '" placeholder="tu-correo@ejemplo.com" style="flex: 1; min-width: 180px; padding: 8px 12px; border: 1px solid #D1D5DB; border-radius: 6px; font-size: 13px;">
                 <button type="button" onclick="submitStockNotifier(' . $pid . ')" id="stock_notify_btn_' . $pid . '" style="background: #D97706; color: #FFF; border: none; padding: 8px 14px; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap;">
                     Notificarme
                 </button>

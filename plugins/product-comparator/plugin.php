@@ -1,33 +1,67 @@
 <?php
 /**
  * Plugin Name: Product Comparator
- * Description: Comparador interactivo de hasta 4 productos simultáneos
+ * Description: Comparador interactivo de hasta 4 productos aislado por cuenta de cliente
  */
 
+use ShopCMS\Core\Auth;
+use ShopCMS\Core\Database;
 use ShopCMS\Core\PluginManager;
 use ShopCMS\Core\Settings;
 use ShopCMS\Core\ThemeCustomizer;
 
-PluginManager::addAction('product_page_buttons', function ($product) {
-    $baseUrl = defined('APP_URL') ? APP_URL : '';
-    $sym = Settings::get('store_currency_symbol', '$');
-    $img = !empty($product['featured_image']) ? ($baseUrl . '/' . ltrim($product['featured_image'], '/')) : '';
-    $prodJson = htmlspecialchars(json_encode([
-        'id' => (int)$product['id'],
-        'name' => $product['name'],
-        'price' => (float)$product['price'],
-        'currency' => $sym,
-        'category' => $product['category_name'] ?? 'General',
-        'sku' => $product['sku'] ?: 'N/A',
-        'stock' => (int)$product['quantity'],
-        'short_desc' => $product['short_description'] ?? '',
-        'image' => $img,
-        'url' => $baseUrl . '/product/' . $product['slug']
-    ], JSON_UNESCAPED_UNICODE), ENT_QUOTES, 'UTF-8');
+if (!function_exists('scms_comparator_customer_items')) {
+    function scms_comparator_customer_items(int $customerId): array {
+        if ($customerId <= 0) return [];
+        try {
+            $raw = Settings::getRaw('customer_comparator_' . $customerId, '[]');
+            $ids = json_decode($raw, true);
+            $ids = is_array($ids)
+                ? array_slice(array_values(array_unique(array_filter(array_map('intval', $ids), fn($n) => $n > 0))), 0, 4)
+                : [];
+            if (empty($ids)) return [];
 
+            $placeholders = implode(',', array_fill(0, count($ids), '?'));
+            $rows = Database::fetchAll(
+                "SELECT p.id, p.name, p.slug, p.price, p.featured_image, p.quantity, p.sku, p.short_description, c.name as category_name
+                 FROM " . Database::table('products') . " p
+                 LEFT JOIN " . Database::table('categories') . " c ON p.category_id = c.id
+                 WHERE p.is_active = 1 AND p.id IN ({$placeholders})",
+                $ids
+            );
+            $byId = [];
+            $baseUrl = defined('APP_URL') ? APP_URL : '';
+            $sym = Settings::get('store_currency_symbol', '$');
+            foreach ($rows as $r) {
+                $byId[(int)$r['id']] = [
+                    'id' => (int)$r['id'],
+                    'name' => $r['name'],
+                    'price' => (float)$r['price'],
+                    'currency' => $sym,
+                    'category' => $r['category_name'] ?? 'General',
+                    'sku' => $r['sku'] ?: 'N/A',
+                    'stock' => (int)$r['quantity'],
+                    'short_desc' => $r['short_description'] ?? '',
+                    'image' => !empty($r['featured_image']) ? ($baseUrl . '/' . ltrim($r['featured_image'], '/')) : '',
+                    'url' => $baseUrl . '/product/' . $r['slug'],
+                ];
+            }
+            $ordered = [];
+            foreach ($ids as $id) {
+                if (isset($byId[$id])) $ordered[] = $byId[$id];
+            }
+            return $ordered;
+        } catch (\Throwable $e) {
+            return [];
+        }
+    }
+}
+
+PluginManager::addAction('product_page_buttons', function ($product) {
+    $prodId = (int)$product['id'];
     echo '
     <div style="margin-top: 8px;">
-        <button type="button" onclick="addToComparator(' . $prodJson . ')" class="btn-store btn-store-secondary" style="width: 100%; padding: 9px; font-size: 13px; display: flex; align-items: center; justify-content: center; gap: 8px; border-color: #D1D5DB;">
+        <button type="button" onclick="addToComparator(' . $prodId . ')" class="btn-store btn-store-secondary" style="width: 100%; padding: 9px; font-size: 13px; display: flex; align-items: center; justify-content: center; gap: 8px; border-color: #D1D5DB;">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <line x1="18" y1="20" x2="18" y2="10"></line>
                 <line x1="12" y1="20" x2="12" y2="4"></line>
@@ -50,8 +84,29 @@ PluginManager::addAction('theme_footer', function () {
         return;
     }
 
+    $baseUrl = defined('APP_URL') ? APP_URL : '';
+    $customerId = Auth::customerId();
+
+    if ($customerId <= 0) {
+        // Usuario no autenticado: limpiar restos heredados, no mostrar barra/badge de comparación y pedir login al click
+        echo '
+        <script>
+        (function() {
+            try { localStorage.removeItem("shopcms_comparator"); } catch (e) {}
+            var BASE = ' . json_encode($baseUrl) . ';
+            window.addToComparator = function() {
+                var target = window.location.pathname;
+                if (BASE && target.indexOf(BASE) === 0) target = target.slice(BASE.length) || "/";
+                window.location.href = BASE + "/login?auth_msg=comparator&redirect=" + encodeURIComponent(target);
+            };
+        })();
+        </script>';
+        return;
+    }
+
+    $initialItems = scms_comparator_customer_items($customerId);
+
     echo '
-    <!-- Pill discreta de respaldo (solo visible si el tema no tiene .header-actions) -->
     <div id="comparator_bar" style="display: none; position: fixed; top: 82px; right: 20px; z-index: 9980; background: #FFFFFF; color: #111827; padding: 7px 12px; border-radius: 999px; border: 1px solid #D1D5DB; box-shadow: 0 4px 14px rgba(0,0,0,0.09); align-items: center; gap: 10px;">
         <button type="button" onclick="openComparatorModal()" style="background: none; border: none; color: #111827; font-size: 12.5px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 6px;">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#008060" stroke-width="2.2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
@@ -62,13 +117,12 @@ PluginManager::addAction('theme_footer', function () {
 
     <div id="comparator_toast" style="display: none; position: fixed; top: 82px; left: 50%; transform: translateX(-50%); z-index: 10010; background: #111827; color: #FFFFFF; padding: 9px 16px; border-radius: 8px; font-size: 12.5px; font-weight: 600; box-shadow: 0 6px 16px rgba(0,0,0,0.2);"></div>
 
-    <!-- Modal del comparador -->
     <div id="comparator_modal" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 10030; align-items: center; justify-content: center; padding: 20px;">
         <div style="background: #FFFFFF; max-width: 900px; width: 100%; border-radius: 14px; padding: 26px; box-shadow: 0 20px 40px rgba(0,0,0,0.25); max-height: 90vh; overflow-y: auto;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px; border-bottom: 1px solid #E5E7EB; padding-bottom: 12px;">
                 <div>
                     <h3 style="font-size: 18px; font-weight: 700; margin: 0; color: #111827;">Comparador de Productos (Máx. 4)</h3>
-                    <div style="font-size: 12px; color: #6B7280; margin-top: 2px;">Compara características, precio y disponibilidad en tiempo real.</div>
+                    <div style="font-size: 12px; color: #6B7280; margin-top: 2px;">Compara características, precio y disponibilidad desde tu cuenta.</div>
                 </div>
                 <div style="display: flex; align-items: center; gap: 10px;">
                     <button type="button" onclick="clearComparator()" style="background: #F3F4F6; color: #374151; border: 1px solid #D1D5DB; padding: 5px 10px; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer;">Vaciar todo</button>
@@ -81,6 +135,11 @@ PluginManager::addAction('theme_footer', function () {
 
     <script>
     (function() {
+        try { localStorage.removeItem("shopcms_comparator"); } catch (e) {}
+
+        var BASE = ' . json_encode($baseUrl) . ';
+        var compItems = ' . json_encode($initialItems, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) . ';
+
         function esc(s) {
             return String(s || "").replace(/[&<>"\x27]/g, function(m) {
                 return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","\x27":"&#39;"}[m];
@@ -114,35 +173,41 @@ PluginManager::addAction('theme_footer', function () {
             }
             return btn;
         }
-        window.getComparatorList = function() {
-            try { return JSON.parse(localStorage.getItem("shopcms_comparator") || "[]"); }
-            catch (e) { return []; }
-        };
-        window.addToComparator = function(product) {
-            var list = getComparatorList();
-            if (list.some(function(p) { return p.id === product.id; })) {
-                showCompToast("Este producto ya está en el comparador.");
-                openComparatorModal();
-                return;
+        async function syncComparatorServer(action, prodId) {
+            var res = await fetch(BASE + "/plugin/comparator/sync", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ action: action, product_id: Number(prodId || 0) })
+            });
+            var data = await res.json();
+            if (res.status === 401 || (data && data.require_login)) {
+                window.location.href = BASE + "/login?auth_msg=comparator";
+                return null;
             }
-            if (list.length >= 4) {
-                showCompToast("Máximo 4 productos en comparación simultánea.");
-                openComparatorModal();
-                return;
+            if (data && data.ok) {
+                compItems = Array.isArray(data.items) ? data.items : [];
+                window.updateComparatorUI();
             }
-            list.push(product);
-            localStorage.setItem("shopcms_comparator", JSON.stringify(list));
-            updateComparatorUI();
-            showCompToast("Agregado al comparador (" + list.length + "/4).");
+            return data;
+        }
+
+        window.addToComparator = async function(prodIdOrObj) {
+            var prodId = (typeof prodIdOrObj === "object" && prodIdOrObj !== null) ? Number(prodIdOrObj.id) : Number(prodIdOrObj);
+            var data = await syncComparatorServer("add", prodId);
+            if (!data) return;
+            if (data.notice) {
+                showCompToast(data.notice);
+                window.openComparatorModal();
+            } else {
+                showCompToast("Agregado al comparador (" + compItems.length + "/4).");
+            }
         };
-        window.removeFromComparator = function(id) {
-            var list = getComparatorList().filter(function(p) { return Number(p.id) !== Number(id); });
-            localStorage.setItem("shopcms_comparator", JSON.stringify(list));
-            updateComparatorUI();
-            openComparatorModal();
+        window.removeFromComparator = async function(id) {
+            await syncComparatorServer("remove", id);
+            window.openComparatorModal();
         };
         window.updateComparatorUI = function() {
-            var list = getComparatorList();
+            var list = compItems;
             var headerBtn = ensureHeaderCompareBtn();
             var bar = document.getElementById("comparator_bar");
             var count = document.getElementById("comparator_count");
@@ -165,7 +230,7 @@ PluginManager::addAction('theme_footer', function () {
             }
         };
         window.openComparatorModal = function() {
-            var list = getComparatorList();
+            var list = compItems;
             var modal = document.getElementById("comparator_modal");
             var content = document.getElementById("comparator_content");
             if (!modal || !content) return;
@@ -228,12 +293,11 @@ PluginManager::addAction('theme_footer', function () {
             var modal = document.getElementById("comparator_modal");
             if (modal) modal.style.display = "none";
         };
-        window.clearComparator = function() {
-            localStorage.removeItem("shopcms_comparator");
-            updateComparatorUI();
-            closeComparatorModal();
+        window.clearComparator = async function() {
+            await syncComparatorServer("clear", 0);
+            window.closeComparatorModal();
         };
-        document.addEventListener("DOMContentLoaded", updateComparatorUI);
+        document.addEventListener("DOMContentLoaded", window.updateComparatorUI);
     })();
     </script>';
 });

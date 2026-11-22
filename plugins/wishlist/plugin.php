@@ -1,44 +1,76 @@
 <?php
 /**
  * Plugin Name: Wishlist - Lista de Deseos
- * Description: Añade botón para guardar favoritos y compartir enlace público de deseos
+ * Description: Lista de favoritos aislada por cuenta de cliente con guardado en base de datos
  */
 
+use ShopCMS\Core\Auth;
+use ShopCMS\Core\Database;
 use ShopCMS\Core\PluginManager;
 use ShopCMS\Core\Settings;
 use ShopCMS\Core\ThemeCustomizer;
 
+if (!function_exists('scms_wishlist_customer_data')) {
+    function scms_wishlist_customer_ids(int $customerId): array {
+        if ($customerId <= 0) return [];
+        try {
+            $raw = Settings::getRaw('customer_wishlist_' . $customerId, '[]');
+            $decoded = json_decode($raw, true);
+            return is_array($decoded)
+                ? array_values(array_unique(array_filter(array_map('intval', $decoded), fn($n) => $n > 0)))
+                : [];
+        } catch (\Throwable $e) {
+            return [];
+        }
+    }
+
+    function scms_wishlist_customer_products(int $customerId): array {
+        $ids = scms_wishlist_customer_ids($customerId);
+        if (empty($ids)) return [];
+        $placeholders = implode(',', array_fill(0, count($ids), '?'));
+        $rows = Database::fetchAll(
+            "SELECT p.id, p.name, p.slug, p.price, p.featured_image, p.quantity
+             FROM " . Database::table('products') . " p
+             WHERE p.is_active = 1 AND p.id IN ({$placeholders})",
+            $ids
+        );
+        $byId = [];
+        $baseUrl = defined('APP_URL') ? APP_URL : '';
+        $sym = Settings::get('store_currency_symbol', '$');
+        foreach ($rows as $r) {
+            $byId[(int)$r['id']] = [
+                'id' => (int)$r['id'],
+                'name' => $r['name'],
+                'slug' => $r['slug'],
+                'price' => (float)$r['price'],
+                'currency' => $sym,
+                'image' => !empty($r['featured_image']) ? ($baseUrl . '/' . ltrim($r['featured_image'], '/')) : '',
+                'url' => $baseUrl . '/product/' . $r['slug'],
+            ];
+        }
+        $ordered = [];
+        foreach ($ids as $id) {
+            if (isset($byId[$id])) $ordered[] = $byId[$id];
+        }
+        return $ordered;
+    }
+}
+
 PluginManager::addAction('product_page_buttons', function ($product) {
-    $baseUrl = defined('APP_URL') ? APP_URL : '';
-    $sym = Settings::get('store_currency_symbol', '$');
     $prodId = (int)$product['id'];
-    $img = !empty($product['featured_image']) ? ($baseUrl . '/' . ltrim($product['featured_image'], '/')) : '';
-    $itemJson = htmlspecialchars(json_encode([
-        'id' => $prodId,
-        'name' => $product['name'],
-        'slug' => $product['slug'],
-        'price' => (float)$product['price'],
-        'currency' => $sym,
-        'image' => $img,
-        'url' => $baseUrl . '/product/' . $product['slug'],
-    ], JSON_UNESCAPED_UNICODE), ENT_QUOTES, 'UTF-8');
+    $customerId = Auth::customerId();
+    $savedIds = $customerId > 0 ? scms_wishlist_customer_ids($customerId) : [];
+    $isSaved = in_array($prodId, $savedIds, true);
 
     echo '
     <div style="margin-top: 12px; margin-bottom: 10px;">
-        <button type="button" onclick="toggleWishlist(' . $itemJson . ')" id="wishlist_btn_' . $prodId . '" class="btn-store btn-store-secondary" style="width: 100%; padding: 10px; font-size: 14px; display: flex; align-items: center; justify-content: center; gap: 8px;">
-            <svg id="wishlist_icon_' . $prodId . '" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <button type="button" onclick="toggleWishlist(' . $prodId . ')" id="wishlist_btn_' . $prodId . '" class="btn-store btn-store-secondary" style="width: 100%; padding: 10px; font-size: 14px; display: flex; align-items: center; justify-content: center; gap: 8px;">
+            <svg id="wishlist_icon_' . $prodId . '" width="16" height="16" viewBox="0 0 24 24" fill="' . ($isSaved ? '#D72C0D' : 'none') . '" stroke="' . ($isSaved ? '#D72C0D' : 'currentColor') . '" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path>
             </svg>
-            <span id="wishlist_text_' . $prodId . '">Guardar en Lista de Deseos</span>
+            <span id="wishlist_text_' . $prodId . '">' . ($isSaved ? 'Guardado en tus Favoritos' : 'Guardar en Lista de Deseos') . '</span>
         </button>
-    </div>
-    <script>
-    document.addEventListener("DOMContentLoaded", function() {
-        if (typeof syncWishlistButtonState === "function") {
-            syncWishlistButtonState(' . $prodId . ');
-        }
-    });
-    </script>';
+    </div>';
 });
 
 PluginManager::addAction('theme_footer', function () {
@@ -46,22 +78,44 @@ PluginManager::addAction('theme_footer', function () {
         return;
     }
     $baseUrl = defined('APP_URL') ? APP_URL : '';
+    $customerId = Auth::customerId();
+    $initialItems = $customerId > 0 ? scms_wishlist_customer_products($customerId) : [];
     $waBottom = (Settings::getBool('whatsapp_widget_enabled', false) && trim(Settings::get('store_phone', '')) !== '') ? '72px' : '20px';
 
+    if ($customerId <= 0) {
+        // Usuario no autenticado: limpiar posibles restos heredados y exigir inicio de sesión al interactuar
+        echo '
+        <script>
+        (function() {
+            try {
+                localStorage.removeItem("shopcms_wishlist");
+                localStorage.removeItem("shopcms_wishlist_items");
+            } catch (e) {}
+            var BASE = ' . json_encode($baseUrl) . ';
+            window.toggleWishlist = function() {
+                var target = window.location.pathname;
+                if (BASE && target.indexOf(BASE) === 0) target = target.slice(BASE.length) || "/";
+                window.location.href = BASE + "/login?auth_msg=wishlist&redirect=" + encodeURIComponent(target);
+            };
+        })();
+        </script>';
+        return;
+    }
+
     echo '
-    <!-- BOTÓN FLOTANTE DE WISHLIST -->
-    <button type="button" id="scms-wishlist-fab" onclick="openWishlistModal(false)" style="display: none; position: fixed; bottom: ' . $waBottom . '; right: 20px; z-index: 985; background: #FFFFFF; color: #111827; border: 1px solid #E5E7EB; border-radius: 999px; padding: 10px 15px; align-items: center; gap: 7px; font-size: 13px; font-weight: 700; cursor: pointer; box-shadow: 0 6px 18px rgba(0,0,0,0.12);">
+    <!-- BOTÓN FLOTANTE DE WISHLIST (SOLO USUARIO AUTENTICADO) -->
+    <button type="button" id="scms-wishlist-fab" onclick="openWishlistModal(false)" style="display: ' . (count($initialItems) > 0 ? 'inline-flex' : 'none') . '; position: fixed; bottom: ' . $waBottom . '; right: 20px; z-index: 985; background: #FFFFFF; color: #111827; border: 1px solid #E5E7EB; border-radius: 999px; padding: 10px 15px; align-items: center; gap: 7px; font-size: 13px; font-weight: 700; cursor: pointer; box-shadow: 0 6px 18px rgba(0,0,0,0.12);">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="#DC2626" stroke="#DC2626" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
-        <span>Favoritos (<span id="scms-wishlist-count">0</span>)</span>
+        <span>Favoritos (<span id="scms-wishlist-count">' . count($initialItems) . '</span>)</span>
     </button>
 
-    <!-- MODAL DE LISTA DE DESEOS Y COMPARTIR -->
+    <!-- MODAL DE LISTA DE DESEOS -->
     <div id="scms-wishlist-modal" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.55); z-index: 10020; align-items: center; justify-content: center; padding: 20px;">
         <div style="background: #FFFFFF; max-width: 620px; width: 100%; border-radius: 14px; padding: 24px; box-shadow: 0 20px 44px rgba(0,0,0,0.25); max-height: 88vh; overflow-y: auto;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; border-bottom: 1px solid #E5E7EB; padding-bottom: 12px;">
                 <div>
                     <h3 id="scms-wishlist-modal-title" style="font-size: 18px; font-weight: 700; margin: 0; color: #111827;">Mi Lista de Deseos</h3>
-                    <div id="scms-wishlist-modal-sub" style="font-size: 12px; color: #6B7280; margin-top: 2px;">Guarda tus productos favoritos o comparte tu lista mediante un enlace.</div>
+                    <div id="scms-wishlist-modal-sub" style="font-size: 12px; color: #6B7280; margin-top: 2px;">Tus productos favoritos guardados de forma privada en tu cuenta.</div>
                 </div>
                 <button type="button" onclick="closeWishlistModal()" style="border: none; background: transparent; font-size: 22px; cursor: pointer; color: #6B7280;">&times;</button>
             </div>
@@ -85,62 +139,62 @@ PluginManager::addAction('theme_footer', function () {
 
     <script>
     (function() {
+        try {
+            localStorage.removeItem("shopcms_wishlist");
+            localStorage.removeItem("shopcms_wishlist_items");
+        } catch (e) {}
+
         var BASE = ' . json_encode($baseUrl) . ';
+        var wishlistProducts = ' . json_encode($initialItems, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) . ';
 
-        function getIds() {
-            try { return JSON.parse(localStorage.getItem("shopcms_wishlist") || "[]").map(Number).filter(Boolean); }
-            catch (e) { return []; }
-        }
-        function getItemsMap() {
-            try { return JSON.parse(localStorage.getItem("shopcms_wishlist_items") || "{}"); }
-            catch (e) { return {}; }
-        }
-        function saveStore(ids, map) {
-            localStorage.setItem("shopcms_wishlist", JSON.stringify(ids));
-            localStorage.setItem("shopcms_wishlist_items", JSON.stringify(map));
+        function esc(s) {
+            return String(s || "").replace(/[&<>"\x27]/g, function(m) {
+                return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","\x27":"&#39;"}[m];
+            });
         }
 
-        window.syncWishlistButtonState = function(prodId) {
-            var ids = getIds();
-            var btnText = document.getElementById("wishlist_text_" + prodId);
-            var btnIcon = document.getElementById("wishlist_icon_" + prodId);
-            if (!btnText || !btnIcon) return;
-            if (ids.indexOf(Number(prodId)) !== -1) {
-                btnText.innerText = "Guardado en tus Favoritos";
-                btnIcon.setAttribute("fill", "#D72C0D");
-                btnIcon.setAttribute("stroke", "#D72C0D");
-            } else {
-                btnText.innerText = "Guardar en Lista de Deseos";
-                btnIcon.setAttribute("fill", "none");
-                btnIcon.setAttribute("stroke", "currentColor");
-            }
-        };
+        function syncButtons() {
+            var ids = wishlistProducts.map(function(p) { return Number(p.id); });
+            document.querySelectorAll("[id^=\'wishlist_text_\']").forEach(function(span) {
+                var pid = Number(span.id.replace("wishlist_text_", ""));
+                var icon = document.getElementById("wishlist_icon_" + pid);
+                var saved = ids.indexOf(pid) !== -1;
+                span.innerText = saved ? "Guardado en tus Favoritos" : "Guardar en Lista de Deseos";
+                if (icon) {
+                    icon.setAttribute("fill", saved ? "#D72C0D" : "none");
+                    icon.setAttribute("stroke", saved ? "#D72C0D" : "currentColor");
+                }
+            });
+        }
 
         function updateFab() {
-            var ids = getIds();
             var fab = document.getElementById("scms-wishlist-fab");
             var countEl = document.getElementById("scms-wishlist-count");
-            if (countEl) countEl.textContent = ids.length;
-            if (fab) fab.style.display = ids.length > 0 ? "inline-flex" : "none";
+            if (countEl) countEl.textContent = wishlistProducts.length;
+            if (fab) fab.style.display = wishlistProducts.length > 0 ? "inline-flex" : "none";
+            syncButtons();
         }
 
-        window.toggleWishlist = function(itemOrId) {
-            var isObj = (typeof itemOrId === "object" && itemOrId !== null);
-            var prodId = Number(isObj ? itemOrId.id : itemOrId);
-            var ids = getIds();
-            var map = getItemsMap();
-            var idx = ids.indexOf(prodId);
-
-            if (idx === -1) {
-                ids.push(prodId);
-                if (isObj) map[prodId] = itemOrId;
-            } else {
-                ids.splice(idx, 1);
-                delete map[prodId];
+        async function syncServer(action, productId) {
+            var res = await fetch(BASE + "/plugin/wishlist/sync", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ action: action, product_id: Number(productId || 0) })
+            });
+            var data = await res.json();
+            if (res.status === 401 || (data && data.require_login)) {
+                window.location.href = BASE + "/login?auth_msg=wishlist";
+                return null;
             }
-            saveStore(ids, map);
-            window.syncWishlistButtonState(prodId);
-            updateFab();
+            if (data && data.ok) {
+                wishlistProducts = Array.isArray(data.products) ? data.products : [];
+                updateFab();
+            }
+            return data;
+        }
+
+        window.toggleWishlist = async function(prodId) {
+            await syncServer("toggle", prodId);
         };
 
         function renderModalList(products, isSharedMode) {
@@ -162,31 +216,26 @@ PluginManager::addAction('theme_footer', function () {
 
             box.innerHTML = products.map(function(p) {
                 var imgHtml = p.image
-                    ? "<img src=\'" + p.image + "\' style=\'width:54px;height:54px;object-fit:cover;border-radius:8px;border:1px solid #E5E7EB;\'>"
+                    ? "<img src=\'" + esc(p.image) + "\' style=\'width:54px;height:54px;object-fit:cover;border-radius:8px;border:1px solid #E5E7EB;\'>"
                     : "<div style=\'width:54px;height:54px;border-radius:8px;background:#F3F4F6;\'></div>";
                 var removeBtn = isSharedMode
-                    ? "<button type=\'button\' onclick=\'saveSharedItem(" + JSON.stringify(p).replace(/\x27/g, "&#39;") + ")\' style=\'background:#F3F4F6;border:1px solid #D1D5DB;border-radius:6px;padding:6px 10px;font-size:12px;font-weight:600;cursor:pointer;\'>Guardar</button>"
-                    : "<button type=\'button\' onclick=\'removeWishlistItem(" + p.id + ")\' style=\'background:#FEF2F2;color:#DC2626;border:1px solid #FECACA;border-radius:6px;padding:6px 10px;font-size:12px;font-weight:600;cursor:pointer;\'>Quitar</button>";
+                    ? "<button type=\'button\' onclick=\'saveSharedItem(" + Number(p.id) + ")\' style=\'background:#F3F4F6;border:1px solid #D1D5DB;border-radius:6px;padding:6px 10px;font-size:12px;font-weight:600;cursor:pointer;\'>Guardar</button>"
+                    : "<button type=\'button\' onclick=\'removeWishlistItem(" + Number(p.id) + ")\' style=\'background:#FEF2F2;color:#DC2626;border:1px solid #FECACA;border-radius:6px;padding:6px 10px;font-size:12px;font-weight:600;cursor:pointer;\'>Quitar</button>";
 
                 return "<div style=\'display:flex;align-items:center;gap:12px;padding:10px;border:1px solid #E5E7EB;border-radius:10px;margin-bottom:10px;\'>"
                     + imgHtml
                     + "<div style=\'flex:1;\'>"
-                    + "<div style=\'font-weight:700;font-size:14px;color:#111827;\'>" + String(p.name).replace(/</g, "&lt;") + "</div>"
-                    + "<div style=\'font-size:13px;font-weight:700;color:#008060;\'>" + (p.currency || "$") + Number(p.price || 0).toFixed(2) + "</div>"
+                    + "<div style=\'font-weight:700;font-size:14px;color:#111827;\'>" + esc(p.name) + "</div>"
+                    + "<div style=\'font-size:13px;font-weight:700;color:#008060;\'>" + esc(p.currency || "$") + Number(p.price || 0).toFixed(2) + "</div>"
                     + "</div>"
-                    + "<a href=\'" + p.url + "\' style=\'background:#111827;color:#FFF;padding:6px 12px;border-radius:6px;font-size:12px;font-weight:600;text-decoration:none;\'>Ver</a>"
+                    + "<a href=\'" + esc(p.url) + "\' style=\'background:#111827;color:#FFF;padding:6px 12px;border-radius:6px;font-size:12px;font-weight:600;text-decoration:none;\'>Ver</a>"
                     + removeBtn
                     + "</div>";
             }).join("");
         }
 
-        window.saveSharedItem = function(p) {
-            var ids = getIds();
-            var map = getItemsMap();
-            if (ids.indexOf(Number(p.id)) === -1) ids.push(Number(p.id));
-            map[p.id] = p;
-            saveStore(ids, map);
-            updateFab();
+        window.saveSharedItem = async function(id) {
+            await syncServer("add", id);
             var fb = document.getElementById("scms-wishlist-feedback");
             if (fb) {
                 fb.textContent = "Producto guardado en tu propia lista de deseos.";
@@ -194,9 +243,9 @@ PluginManager::addAction('theme_footer', function () {
             }
         };
 
-        window.removeWishlistItem = function(id) {
-            window.toggleWishlist(id);
-            window.openWishlistModal(false);
+        window.removeWishlistItem = async function(id) {
+            await syncServer("toggle", id);
+            renderModalList(wishlistProducts, false);
         };
 
         window.openWishlistModal = async function(sharedIds) {
@@ -218,22 +267,8 @@ PluginManager::addAction('theme_footer', function () {
                 }
             } else {
                 if (title) title.textContent = "Mi Lista de Deseos";
-                if (sub) sub.textContent = "Guarda tus productos favoritos o comparte tu lista mediante un enlace.";
-                var ids = getIds();
-                var map = getItemsMap();
-                var missing = ids.filter(function(id) { return !map[id]; });
-                if (missing.length) {
-                    try {
-                        var res2 = await fetch(BASE + "/plugin/wishlist/products?ids=" + ids.join(","));
-                        var data2 = await res2.json();
-                        if (data2 && Array.isArray(data2.products)) {
-                            data2.products.forEach(function(p) { map[p.id] = p; });
-                            saveStore(ids, map);
-                        }
-                    } catch (e) {}
-                }
-                var list = ids.map(function(id) { return map[id]; }).filter(Boolean);
-                renderModalList(list, false);
+                if (sub) sub.textContent = "Tus productos favoritos guardados de forma privada en tu cuenta.";
+                renderModalList(wishlistProducts, false);
             }
             if (modal) modal.style.display = "flex";
         };
@@ -244,7 +279,7 @@ PluginManager::addAction('theme_footer', function () {
         };
 
         window.copyWishlistShareLink = function() {
-            var ids = getIds();
+            var ids = wishlistProducts.map(function(p) { return p.id; });
             if (!ids.length) return;
             var url = window.location.origin + BASE + "/catalog?wishlist=" + ids.join(",");
             if (navigator.clipboard && navigator.clipboard.writeText) {
@@ -257,9 +292,8 @@ PluginManager::addAction('theme_footer', function () {
             }
         };
 
-        window.clearWishlistAll = function() {
-            saveStore([], {});
-            updateFab();
+        window.clearWishlistAll = async function() {
+            await syncServer("clear", 0);
             renderModalList([], false);
         };
 

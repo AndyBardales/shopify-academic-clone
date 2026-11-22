@@ -100,12 +100,14 @@ class Auth {
                 $_SESSION['auth_error'] = "Esta cuenta se encuentra deshabilitada. Contacta con la tienda para más información.";
                 return false;
             }
+            unset($_SESSION['cart'], $_SESSION['cart_discount'], $_SESSION['cart_coupon'], $_SESSION['cart_owner_id'], $_SESSION['cart_error']);
             $_SESSION['customer_id'] = $user['id'];
             $_SESSION['customer_name'] = $user['name'];
             $_SESSION['customer_email'] = $user['email'];
             $_SESSION['customer_phone'] = $user['phone'] ?? '';
             $_SESSION['customer_address'] = $user['address'] ?? '';
             self::$customerActiveCache = true;
+            self::loadCustomerCart((int)$user['id']);
             return true;
         }
 
@@ -145,20 +147,89 @@ class Auth {
             ]);
         }
 
+        unset($_SESSION['cart'], $_SESSION['cart_discount'], $_SESSION['cart_coupon'], $_SESSION['cart_owner_id'], $_SESSION['cart_error']);
         $_SESSION['customer_id'] = $userId;
         $_SESSION['customer_name'] = $name;
         $_SESSION['customer_email'] = $email;
         $_SESSION['customer_phone'] = $phone ?? '';
         $_SESSION['customer_address'] = $address ?? '';
         self::$customerActiveCache = true;
+        self::loadCustomerCart((int)$userId);
 
         return $userId;
     }
 
+    public static function customerId(): int {
+        return self::isCustomer() ? (int)$_SESSION['customer_id'] : 0;
+    }
+
+    public static function loadCustomerCart(int $customerId): void {
+        self::init();
+        if ($customerId <= 0) {
+            unset($_SESSION['cart'], $_SESSION['cart_discount'], $_SESSION['cart_coupon'], $_SESSION['cart_owner_id'], $_SESSION['cart_error']);
+            return;
+        }
+        $cart = [];
+        try {
+            $raw = Settings::getRaw('customer_cart_' . $customerId, '[]');
+            $decoded = json_decode($raw, true);
+            if (is_array($decoded)) {
+                $cart = $decoded;
+            }
+        } catch (\Throwable $e) {
+            $cart = [];
+        }
+        $_SESSION['cart'] = $cart;
+        $_SESSION['cart_owner_id'] = $customerId;
+        unset($_SESSION['cart_discount'], $_SESSION['cart_coupon'], $_SESSION['cart_error']);
+    }
+
+    public static function saveCustomerCart(): void {
+        self::init();
+        if (!self::isCustomer()) {
+            return;
+        }
+        $uid = (int)$_SESSION['customer_id'];
+        $_SESSION['cart_owner_id'] = $uid;
+        try {
+            $cart = is_array($_SESSION['cart'] ?? null) ? $_SESSION['cart'] : [];
+            Settings::saveMany([
+                'customer_cart_' . $uid => json_encode($cart, JSON_UNESCAPED_UNICODE)
+            ]);
+        } catch (\Throwable $e) {
+            // Ignorar si BD no está disponible en pruebas aisladas
+        }
+    }
+
+    public static function ensureIsolatedCartSession(): void {
+        self::init();
+        if (!self::isCustomer()) {
+            unset($_SESSION['cart'], $_SESSION['cart_discount'], $_SESSION['cart_coupon'], $_SESSION['cart_owner_id'], $_SESSION['cart_error']);
+            return;
+        }
+        $uid = (int)$_SESSION['customer_id'];
+        if ((int)($_SESSION['cart_owner_id'] ?? 0) !== $uid) {
+            self::loadCustomerCart($uid);
+        }
+    }
+
     public static function customerLogout(): void {
         self::init();
+        self::saveCustomerCart();
         self::$customerActiveCache = null;
-        unset($_SESSION['customer_id'], $_SESSION['customer_name'], $_SESSION['customer_email'], $_SESSION['customer_phone'], $_SESSION['customer_address']);
+        unset(
+            $_SESSION['customer_id'],
+            $_SESSION['customer_name'],
+            $_SESSION['customer_email'],
+            $_SESSION['customer_phone'],
+            $_SESSION['customer_address'],
+            $_SESSION['cart'],
+            $_SESSION['cart_discount'],
+            $_SESSION['cart_coupon'],
+            $_SESSION['cart_owner_id'],
+            $_SESSION['cart_error'],
+            $_SESSION['checkout_notice']
+        );
     }
 
     /**

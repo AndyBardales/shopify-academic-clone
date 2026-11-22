@@ -292,7 +292,31 @@ class StoreController {
         return $res['discount'];
     }
 
+    private function requireCustomer(string $noticeMsg, string $redirectTarget = ''): array {
+        if (!\ShopCMS\Core\Auth::isCustomer()) {
+            \ShopCMS\Core\Auth::ensureIsolatedCartSession();
+            $_SESSION['checkout_notice'] = $noticeMsg;
+            $qs = $redirectTarget !== '' ? '?redirect=' . urlencode($redirectTarget) : '';
+            header('Location: ' . (defined('APP_URL') ? APP_URL : '') . '/login' . $qs);
+            exit;
+        }
+        \ShopCMS\Core\Auth::ensureIsolatedCartSession();
+        return \ShopCMS\Core\Auth::customer();
+    }
+
+    private function resolvePostAuthDestination(string $redirect): string {
+        $redirect = trim($redirect);
+        if ($redirect === 'checkout') return '/checkout';
+        if ($redirect === 'cart') return '/cart';
+        if ($redirect === 'catalog') return '/catalog';
+        if ($redirect !== '' && str_starts_with($redirect, '/') && !str_starts_with($redirect, '//') && !str_contains($redirect, '://')) {
+            return $redirect;
+        }
+        return '/account';
+    }
+
     public function cart(): void {
+        $this->requireCustomer("Inicia sesión con tu cuenta de cliente para ver tu carrito de compras.", "cart");
         $cart = $_SESSION['cart'] ?? [];
         $subtotal = 0;
         foreach ($cart as $item) {
@@ -327,13 +351,18 @@ class StoreController {
 
         $product = Database::fetch("SELECT * FROM " . Database::table('products') . " WHERE id = ?", [$productId]);
         if (!$product) {
+            if (!\ShopCMS\Core\Auth::isCustomer()) {
+                $this->requireCustomer("Inicia sesión para agregar productos a tu carrito de compras.", "catalog");
+            }
             header('Location: ' . (defined('APP_URL') ? APP_URL : '') . '/catalog');
             exit;
         }
 
+        $this->requireCustomer("Inicia sesión para agregar productos a tu carrito de compras.", "/product/" . $product['slug']);
+
         $title = $product['name'];
         $price = $product['price'];
-        $image = $product['featured_image'] ?: 'assets/images/sample-product.png';
+        $image = $product['featured_image'] ?: '';
 
         if ($variantId) {
             $variant = Database::fetch("SELECT * FROM " . Database::table('product_variants') . " WHERE id = ?", [$variantId]);
@@ -378,11 +407,13 @@ class StoreController {
             ];
         }
 
+        \ShopCMS\Core\Auth::saveCustomerCart();
         header('Location: ' . (defined('APP_URL') ? APP_URL : '') . '/cart');
         exit;
     }
 
     public function cartUpdate(): void {
+        $this->requireCustomer("Inicia sesión para modificar tu carrito de compras.", "cart");
         if (!empty($_POST['quantities']) && is_array($_POST['quantities'])) {
             foreach ($_POST['quantities'] as $key => $qty) {
                 $qty = (int)$qty;
@@ -406,19 +437,23 @@ class StoreController {
                 }
             }
         }
+        \ShopCMS\Core\Auth::saveCustomerCart();
         header('Location: ' . (defined('APP_URL') ? APP_URL : '') . '/cart');
         exit;
     }
 
     public function cartRemove(string $itemKey): void {
+        $this->requireCustomer("Inicia sesión para gestionar tu carrito de compras.", "cart");
         if (isset($_SESSION['cart'][$itemKey])) {
             unset($_SESSION['cart'][$itemKey]);
+            \ShopCMS\Core\Auth::saveCustomerCart();
         }
         header('Location: ' . (defined('APP_URL') ? APP_URL : '') . '/cart');
         exit;
     }
 
     public function applyCoupon(): void {
+        $this->requireCustomer("Inicia sesión para aplicar cupones en tu carrito.", "cart");
         $code = strtoupper(preg_replace('/\s+/', '', trim($_POST['coupon_code'] ?? '')));
         $coupon = Database::fetch("SELECT * FROM " . Database::table('coupons') . " WHERE code = ? AND is_active = 1", [$code]);
         $currency = $this->getCurrency();
@@ -448,6 +483,7 @@ class StoreController {
     }
 
     public function removeCoupon(): void {
+        $this->requireCustomer("Inicia sesión para gestionar tu carrito.", "cart");
         unset($_SESSION['cart_discount'], $_SESSION['cart_coupon']);
         header('Location: ' . (defined('APP_URL') ? APP_URL : '') . '/cart');
         exit;
@@ -691,18 +727,27 @@ class StoreController {
             'payment_method' => $paymentMethod
         ]);
 
-        // 7. Vaciar carrito
+        // 7. Vaciar carrito de sesión y guardado en BD
         unset($_SESSION['cart'], $_SESSION['cart_discount'], $_SESSION['cart_coupon']);
+        \ShopCMS\Core\Auth::saveCustomerCart();
 
         header('Location: ' . (defined('APP_URL') ? APP_URL : '') . '/order/success/' . ltrim($orderNumber, '#'));
         exit;
     }
 
     public function orderSuccess(string $orderNumber): void {
+        $customer = $this->requireCustomer("Inicia sesión para ver el comprobante de tu pedido.", "/order/success/" . ltrim($orderNumber, '#'));
         $clean = ltrim($orderNumber, '#');
         $order = Database::fetch("SELECT * FROM " . Database::table('orders') . " WHERE order_number = ? OR order_number = ?", [$clean, '#' . $clean]);
         if (!$order) {
-            header('Location: ' . (defined('APP_URL') ? APP_URL : '') . '/');
+            header('Location: ' . (defined('APP_URL') ? APP_URL : '') . '/account');
+            exit;
+        }
+        $sameOwner = ((int)($order['customer_id'] ?? 0) === (int)$customer['id'])
+            || (strtolower(trim((string)($order['customer_email'] ?? ''))) === strtolower(trim((string)$customer['email'])));
+        if (!$sameOwner && !\ShopCMS\Core\Auth::isAdmin()) {
+            $_SESSION['flash_error'] = "No tienes permiso para acceder a este pedido.";
+            header('Location: ' . (defined('APP_URL') ? APP_URL : '') . '/account');
             exit;
         }
 
@@ -721,15 +766,27 @@ class StoreController {
     // ==========================================
     // AUTENTICACIÓN Y CUENTA DE CLIENTES
     // ==========================================
+    private function resolveAuthNotice(?string $sessionNotice): ?string {
+        if (!empty($sessionNotice)) return $sessionNotice;
+        $code = $_GET['auth_msg'] ?? '';
+        $map = [
+            'wishlist' => 'Inicia sesión con tu cuenta para guardar y gestionar tu lista de favoritos.',
+            'comparator' => 'Inicia sesión con tu cuenta para comparar productos (hasta 4).',
+            'stock_notify' => 'Inicia sesión con tu cuenta para recibir alertas cuando repongamos stock.',
+            'cart' => 'Inicia sesión con tu cuenta para agregar productos al carrito de compras.',
+        ];
+        return $map[$code] ?? null;
+    }
+
     public function customerLogin(): void {
         if (\ShopCMS\Core\Auth::isCustomer()) {
             $redirect = $_GET['redirect'] ?? '';
-            header('Location: ' . (defined('APP_URL') ? APP_URL : '') . ($redirect === 'checkout' ? '/checkout' : '/account'));
+            header('Location: ' . (defined('APP_URL') ? APP_URL : '') . $this->resolvePostAuthDestination($redirect));
             exit;
         }
 
         $error = $_SESSION['auth_error'] ?? null;
-        $notice = $_SESSION['checkout_notice'] ?? null;
+        $notice = $this->resolveAuthNotice($_SESSION['checkout_notice'] ?? null);
         unset($_SESSION['auth_error'], $_SESSION['checkout_notice']);
 
         ThemeManager::render('login', [
@@ -747,7 +804,7 @@ class StoreController {
 
         if (\ShopCMS\Core\Auth::customerLogin($email, $password)) {
             session_write_close();
-            $destination = ($redirect === 'checkout') ? '/checkout' : '/account';
+            $destination = $this->resolvePostAuthDestination($redirect);
             header('Location: ' . (defined('APP_URL') ? APP_URL : '') . $destination);
             exit;
         }
@@ -829,7 +886,7 @@ class StoreController {
 
         try {
             \ShopCMS\Core\Auth::customerRegister($name, $email, $password, $phone, $address);
-            $destination = ($redirect === 'checkout') ? '/checkout' : '/account';
+            $destination = $this->resolvePostAuthDestination($redirect);
             header('Location: ' . (defined('APP_URL') ? APP_URL : '') . $destination);
             exit;
         } catch (\Exception $e) {
@@ -1099,51 +1156,152 @@ class StoreController {
     // ==========================================
     // ENDPOINTS DE PLUGINS EN STOREFRONT
     // ==========================================
-    public function pluginWishlistProducts(): void {
-        header('Content-Type: application/json; charset=utf-8');
-        $rawIds = trim((string)($_GET['ids'] ?? ''));
-        $ids = array_values(array_unique(array_filter(array_map('intval', explode(',', $rawIds)), fn($n) => $n > 0)));
+    private function fetchActiveProductsSummary(array $ids): array {
+        $ids = array_values(array_unique(array_filter(array_map('intval', $ids), fn($n) => $n > 0)));
         if (empty($ids)) {
-            echo json_encode(['ok' => true, 'products' => []]);
-            exit;
+            return [];
         }
         $placeholders = implode(',', array_fill(0, count($ids), '?'));
         $rows = Database::fetchAll(
-            "SELECT p.id, p.name, p.slug, p.price, p.featured_image, p.quantity, c.name as category_name
+            "SELECT p.id, p.name, p.slug, p.price, p.featured_image, p.quantity, p.sku, p.short_description, c.name as category_name
              FROM " . Database::table('products') . " p
              LEFT JOIN " . Database::table('categories') . " c ON p.category_id = c.id
              WHERE p.is_active = 1 AND p.id IN ({$placeholders})",
             $ids
         );
+        $byId = [];
         $baseUrl = defined('APP_URL') ? APP_URL : '';
         $sym = Settings::get('store_currency_symbol', '$');
-        $out = [];
         foreach ($rows as $r) {
-            $out[] = [
+            $byId[(int)$r['id']] = [
                 'id' => (int)$r['id'],
                 'name' => $r['name'],
                 'slug' => $r['slug'],
                 'price' => (float)$r['price'],
                 'currency' => $sym,
                 'category' => $r['category_name'] ?? 'General',
+                'sku' => $r['sku'] ?: 'N/A',
+                'stock' => (int)$r['quantity'],
+                'quantity' => (int)$r['quantity'],
+                'short_desc' => $r['short_description'] ?? '',
                 'image' => !empty($r['featured_image']) ? ($baseUrl . '/' . ltrim($r['featured_image'], '/')) : '',
                 'url' => $baseUrl . '/product/' . $r['slug'],
-                'quantity' => (int)$r['quantity'],
             ];
         }
-        echo json_encode(['ok' => true, 'products' => $out]);
+        $ordered = [];
+        foreach ($ids as $id) {
+            if (isset($byId[$id])) {
+                $ordered[] = $byId[$id];
+            }
+        }
+        return $ordered;
+    }
+
+    public function pluginWishlistProducts(): void {
+        header('Content-Type: application/json; charset=utf-8');
+        if (!\ShopCMS\Core\Auth::isCustomer()) {
+            http_response_code(401);
+            echo json_encode(['ok' => false, 'require_login' => true, 'error' => 'Debes iniciar sesión para acceder a la lista de deseos.']);
+            exit;
+        }
+        $rawIds = trim((string)($_GET['ids'] ?? ''));
+        $ids = array_values(array_unique(array_filter(array_map('intval', explode(',', $rawIds)), fn($n) => $n > 0)));
+        echo json_encode(['ok' => true, 'products' => $this->fetchActiveProductsSummary($ids)]);
+        exit;
+    }
+
+    public function pluginWishlistSync(): void {
+        header('Content-Type: application/json; charset=utf-8');
+        if (!\ShopCMS\Core\Auth::isCustomer()) {
+            http_response_code(401);
+            echo json_encode(['ok' => false, 'require_login' => true, 'error' => 'Inicia sesión para guardar favoritos.']);
+            exit;
+        }
+        $uid = (int)\ShopCMS\Core\Auth::customer()['id'];
+        $body = json_decode(file_get_contents('php://input') ?: '{}', true);
+        if (!is_array($body)) $body = $_POST;
+        $action = (string)($body['action'] ?? 'toggle');
+        $prodId = (int)($body['product_id'] ?? 0);
+
+        $raw = Settings::getRaw('customer_wishlist_' . $uid, '[]');
+        $ids = json_decode($raw, true);
+        $ids = is_array($ids) ? array_values(array_unique(array_filter(array_map('intval', $ids), fn($n) => $n > 0))) : [];
+
+        if ($action === 'clear') {
+            $ids = [];
+        } elseif ($action === 'add' && $prodId > 0) {
+            if (!in_array($prodId, $ids, true)) {
+                $ids[] = $prodId;
+            }
+        } elseif ($action === 'toggle' && $prodId > 0) {
+            if (in_array($prodId, $ids, true)) {
+                $ids = array_values(array_filter($ids, fn($id) => $id !== $prodId));
+            } else {
+                $ids[] = $prodId;
+            }
+        }
+
+        $products = $this->fetchActiveProductsSummary($ids);
+        $cleanIds = array_column($products, 'id');
+        Settings::saveMany(['customer_wishlist_' . $uid => json_encode($cleanIds)]);
+        echo json_encode(['ok' => true, 'ids' => $cleanIds, 'products' => $products]);
+        exit;
+    }
+
+    public function pluginComparatorSync(): void {
+        header('Content-Type: application/json; charset=utf-8');
+        if (!\ShopCMS\Core\Auth::isCustomer()) {
+            http_response_code(401);
+            echo json_encode(['ok' => false, 'require_login' => true, 'error' => 'Inicia sesión para comparar productos.']);
+            exit;
+        }
+        $uid = (int)\ShopCMS\Core\Auth::customer()['id'];
+        $body = json_decode(file_get_contents('php://input') ?: '{}', true);
+        if (!is_array($body)) $body = $_POST;
+        $action = (string)($body['action'] ?? 'add');
+        $prodId = (int)($body['product_id'] ?? 0);
+
+        $raw = Settings::getRaw('customer_comparator_' . $uid, '[]');
+        $ids = json_decode($raw, true);
+        $ids = is_array($ids) ? array_values(array_unique(array_filter(array_map('intval', $ids), fn($n) => $n > 0))) : [];
+
+        $notice = null;
+        if ($action === 'clear') {
+            $ids = [];
+        } elseif ($action === 'remove' && $prodId > 0) {
+            $ids = array_values(array_filter($ids, fn($id) => $id !== $prodId));
+        } elseif ($action === 'add' && $prodId > 0) {
+            if (in_array($prodId, $ids, true)) {
+                $notice = 'Este producto ya está en tu comparador.';
+            } elseif (count($ids) >= 4) {
+                $notice = 'Máximo 4 productos en comparación simultánea.';
+            } else {
+                $ids[] = $prodId;
+            }
+        }
+
+        $items = $this->fetchActiveProductsSummary(array_slice($ids, 0, 4));
+        $cleanIds = array_column($items, 'id');
+        Settings::saveMany(['customer_comparator_' . $uid => json_encode($cleanIds)]);
+        echo json_encode(['ok' => true, 'ids' => $cleanIds, 'items' => $items, 'notice' => $notice]);
         exit;
     }
 
     public function pluginStockNotifierSubscribe(): void {
         header('Content-Type: application/json; charset=utf-8');
+        if (!\ShopCMS\Core\Auth::isCustomer()) {
+            http_response_code(401);
+            echo json_encode(['ok' => false, 'require_login' => true, 'error' => 'Inicia sesión con tu cuenta de cliente para activar avisos de stock.']);
+            exit;
+        }
+        $customer = \ShopCMS\Core\Auth::customer();
         $raw = file_get_contents('php://input');
         $body = json_decode($raw ?: '{}', true);
         if (!is_array($body) || empty($body)) {
             $body = $_POST;
         }
         $productId = (int)($body['product_id'] ?? 0);
-        $email = trim((string)($body['email'] ?? ''));
+        $email = trim((string)($body['email'] ?? $customer['email']));
 
         if ($productId <= 0 || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
             http_response_code(400);

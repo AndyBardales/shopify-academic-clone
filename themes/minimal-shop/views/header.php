@@ -1,7 +1,8 @@
 <?php
 $baseUrl = defined('APP_URL') ? APP_URL : '';
+\ShopCMS\Core\Auth::ensureIsolatedCartSession();
 $cartCount = 0;
-if (!empty($_SESSION['cart'])) {
+if (\ShopCMS\Core\Auth::isCustomer() && !empty($_SESSION['cart'])) {
     foreach ($_SESSION['cart'] as $item) {
         $cartCount += $item['quantity'];
     }
