@@ -1,0 +1,343 @@
+@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700&family=Inter:wght@300;400;500;600&display=swap');
+
+:root {
+  --color-bg: #FFFFFF;
+  --color-surface: #FAFAFA;
+  --color-text: #0F0F0F;
+  --color-text-light: #737373;
+  --color-primary: #171717;
+  --color-primary-hover: #404040;
+  --color-border: #E5E5E5;
+  --font-serif: 'Cinzel', serif;
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: var(--font-sans);
+  background-color: var(--color-bg);
+  color: var(--color-text);
+  line-height: 1.6;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.container {
+  width: 100%;
+  max-width: 1380px;
+  margin: 0 auto;
+  padding: 0 32px;
+}
+
+/* Header Editorial */
+.site-header {
+  background: #FFF;
+  border-bottom: 1px solid var(--color-border);
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+
+.header-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 80px;
+}
+
+.site-logo {
+  font-family: var(--font-serif);
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--color-text);
+  text-decoration: none;
+}
+
+.main-nav {
+  display: flex;
+  gap: 36px;
+}
+
+.main-nav a {
+  text-decoration: none;
+  color: var(--color-text);
+  font-size: 13px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  transition: opacity 0.2s;
+}
+
+.main-nav a:hover {
+  opacity: 0.6;
+}
+
+.cart-button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  text-decoration: none;
+  color: var(--color-text);
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  font-weight: 600;
+}
+
+.cart-badge {
+  background: var(--color-primary);
+  color: #FFF;
+  border-radius: 50%;
+  width: 20px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+}
+
+/* Hero Fullscreen Fashion */
+.fashion-hero {
+  height: 70vh;
+  min-height: 520px;
+  background: linear-gradient(135deg, #171717 0%, #27272A 100%);
+  background-color: #1A1A1A;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  color: #FFF;
+  padding: 40px 20px;
+}
+
+.fashion-hero h1 {
+  font-family: var(--font-serif);
+  font-size: 54px;
+  font-weight: 700;
+  letter-spacing: 4px;
+  text-transform: uppercase;
+  margin-bottom: 16px;
+}
+
+.fashion-hero p {
+  font-size: 16px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  max-width: 600px;
+  margin: 0 auto 28px auto;
+  opacity: 0.9;
+}
+
+/* Grilla con imágenes grandes */
+.fashion-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+  gap: 40px;
+  margin: 50px 0 80px 0;
+}
+
+.fashion-card {
+  text-decoration: none;
+  color: inherit;
+  display: flex;
+  flex-direction: column;
+}
+
+.fashion-card-image {
+  height: 480px;
+  background-color: #F5F5F5;
+  overflow: hidden;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.fashion-card-image img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.fashion-card:hover .fashion-card-image img {
+  transform: scale(1.04);
+}
+
+.fashion-card-info {
+  padding: 16px 0;
+  text-align: center;
+}
+
+.fashion-card-category {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  color: var(--color-text-light);
+  margin-bottom: 6px;
+}
+
+.fashion-card-title {
+  font-size: 16px;
+  font-weight: 500;
+  letter-spacing: 0.5px;
+  margin-bottom: 6px;
+}
+
+.fashion-card-price {
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+}
+
+/* Botones Fashion */
+.btn-fashion {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 14px 32px;
+  background: var(--color-primary);
+  color: #FFF;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  font-size: 12px;
+  font-weight: 600;
+  text-decoration: none;
+  border: 1px solid var(--color-primary);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-fashion:hover {
+  background: #FFF;
+  color: var(--color-primary);
+}
+
+.btn-fashion-outline {
+  background: transparent;
+  color: #FFF;
+  border-color: #FFF;
+}
+.btn-fashion-outline:hover {
+  background: #FFF;
+  color: #000;
+}
+
+/* Footer Editorial */
+.site-footer {
+  margin-top: auto;
+  border-top: 1px solid var(--color-border);
+  padding: 60px 0 30px 0;
+  background: #0F0F0F;
+  color: #A3A3A3;
+  font-size: 13px;
+  letter-spacing: 0.5px;
+}
+
+/* Detalle de Producto - Fashion Editorial */
+.product-detail-layout {
+  display: grid;
+  grid-template-columns: 1.1fr 1fr;
+  gap: 56px;
+  margin: 40px 0 80px 0;
+}
+
+.product-gallery-box {
+  background: #F9F9F9;
+  border: 1px solid #E5E5E5;
+  border-radius: 4px;
+  min-height: 540px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.product-gallery-box img {
+  max-width: 100%;
+  max-height: 520px;
+  object-fit: contain;
+}
+
+.product-info-box h1 {
+  font-family: var(--font-serif);
+  font-size: 34px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  margin-bottom: 14px;
+  color: #111;
+}
+
+.product-info-box .price-box {
+  font-size: 26px;
+  font-weight: 600;
+  color: #111;
+  margin-bottom: 24px;
+  letter-spacing: 0.5px;
+}
+
+.btn-store {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 14px 28px;
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  cursor: pointer;
+  text-decoration: none;
+  border: 1px solid #171717;
+  border-radius: 0;
+  transition: all 0.2s ease;
+}
+
+.btn-store-primary {
+  background: #171717;
+  color: #FFF;
+}
+
+.btn-store-primary:hover {
+  background: #404040;
+  border-color: #404040;
+}
+
+.btn-store-secondary {
+  background: #FFF;
+  color: #171717;
+  border-color: #D4D4D4;
+}
+
+.btn-store-secondary:hover {
+  background: #F5F5F5;
+  border-color: #171717;
+}
+
+/* Carrito y Checkout Fashion */
+.cart-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 28px 0;
+}
+
+.cart-table th, .cart-table td {
+  padding: 16px 12px;
+  border-bottom: 1px solid #E5E5E5;
+  text-align: left;
+}
+
+.cart-table th {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: #737373;
+  font-weight: 600;
+}

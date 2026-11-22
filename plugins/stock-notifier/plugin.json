@@ -1,0 +1,7 @@
+{
+  "name": "Stock Notifier",
+  "slug": "stock-notifier",
+  "version": "1.0.0",
+  "description": "Alerta por correo electrónico para notificar a los clientes automáticamente cuando un producto agotado repone stock.",
+  "author": "Grupo 4 - ShopCMS Team"
+}

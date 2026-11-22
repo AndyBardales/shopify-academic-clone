@@ -1,0 +1,8 @@
+{
+  "name": "Payment Gateway (Culqi & PayPal)",
+  "slug": "payment-gateway",
+  "version": "1.0.0",
+  "description": "Integración de pasarela de pago para aceptar tarjetas de crédito/débito vía Culqi y pagos internacionales con PayPal.",
+  "author": "Grupo 4 - ShopCMS Team"
+}
+

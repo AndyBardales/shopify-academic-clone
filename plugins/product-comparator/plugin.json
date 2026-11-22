@@ -1,0 +1,7 @@
+{
+  "name": "Product Comparator",
+  "slug": "product-comparator",
+  "version": "1.0.0",
+  "description": "Permite a los compradores comparar especificaciones técnicas, precios y stock de hasta 4 productos.",
+  "author": "Grupo 4 - ShopCMS Team"
+}

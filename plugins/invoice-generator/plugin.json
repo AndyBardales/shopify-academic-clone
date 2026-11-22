@@ -1,0 +1,7 @@
+{
+  "name": "Invoice Generator",
+  "slug": "invoice-generator",
+  "version": "1.0.0",
+  "description": "Generación y descarga de factura comercial imprimible con desglose de impuestos (IGV 18%) y formato oficial.",
+  "author": "Grupo 4 - ShopCMS Team"
+}

@@ -1,0 +1,322 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+:root {
+  --color-bg-main: #F6F6F7;
+  --color-bg-card: #FFFFFF;
+  --color-text-primary: #202223;
+  --color-text-secondary: #6D7175;
+  --color-text-muted: #8C9196;
+  --color-shopify-green: #008060;
+  --color-shopify-green-hover: #006e52;
+  --color-cta-dark: #1A1A1A;
+  --color-badge-active-bg: #AEE9D1;
+  --color-badge-active-text: #003D2B;
+  --color-error: #D72C0D;
+  --color-warning: #FFC453;
+  --color-border: #E1E3E5;
+  --color-border-focus: #008060;
+  --font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: var(--font-family);
+  background-color: var(--color-bg-main);
+  color: var(--color-text-primary);
+  line-height: 1.5;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 20px;
+}
+
+.installer-container {
+  width: 100%;
+  max-width: 680px;
+}
+
+.installer-header {
+  text-align: center;
+  margin-bottom: 24px;
+}
+
+.installer-logo {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.installer-logo svg {
+  width: 42px;
+  height: 42px;
+  fill: var(--color-shopify-green);
+}
+
+.installer-logo h1 {
+  font-size: 26px;
+  font-weight: 700;
+  color: var(--color-cta-dark);
+  letter-spacing: -0.5px;
+}
+
+.installer-subtitle {
+  color: var(--color-text-secondary);
+  font-size: 14px;
+}
+
+.steps-bar {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 24px;
+  position: relative;
+  padding: 0 10px;
+}
+
+.steps-bar::before {
+  content: '';
+  position: absolute;
+  top: 15px;
+  left: 30px;
+  right: 30px;
+  height: 2px;
+  background-color: var(--color-border);
+  z-index: 1;
+}
+
+.step-item {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+}
+
+.step-circle {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: #FFF;
+  border: 2px solid var(--color-border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 6px;
+  font-weight: 600;
+  font-size: 13px;
+  transition: all 0.2s ease;
+}
+
+.step-item.active .step-circle {
+  background-color: var(--color-shopify-green);
+  border-color: var(--color-shopify-green);
+  color: #FFF;
+}
+
+.step-item.active {
+  color: var(--color-text-primary);
+  font-weight: 600;
+}
+
+.step-item.completed .step-circle {
+  background-color: var(--color-badge-active-bg);
+  border-color: var(--color-shopify-green);
+  color: var(--color-badge-active-text);
+}
+
+.installer-card {
+  background: var(--color-bg-card);
+  border-radius: 12px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06);
+  border: 1px solid var(--color-border);
+  padding: 32px;
+}
+
+.installer-card h2 {
+  font-size: 20px;
+  font-weight: 600;
+  margin-bottom: 8px;
+  color: var(--color-text-primary);
+}
+
+.installer-card p.description {
+  color: var(--color-text-secondary);
+  font-size: 14px;
+  margin-bottom: 24px;
+}
+
+.check-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 24px;
+}
+
+.check-table th, .check-table td {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--color-border);
+  font-size: 14px;
+  text-align: left;
+}
+
+.check-table th {
+  background-color: #FAFBFB;
+  color: var(--color-text-secondary);
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.badge {
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.badge-success {
+  background-color: var(--color-badge-active-bg);
+  color: var(--color-badge-active-text);
+}
+
+.badge-danger {
+  background-color: #FDEDED;
+  color: var(--color-error);
+}
+
+.alert-box {
+  padding: 14px 16px;
+  border-radius: 8px;
+  margin-bottom: 20px;
+  font-size: 14px;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.alert-error {
+  background-color: #FDEDED;
+  border: 1px solid #F5C6CB;
+  color: var(--color-error);
+}
+
+.alert-info {
+  background-color: #EBF5FA;
+  border: 1px solid #B8E0F2;
+  color: #006FAD;
+}
+
+.form-group {
+  margin-bottom: 18px;
+}
+
+.form-group label {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 6px;
+  color: var(--color-text-primary);
+}
+
+.form-group .help-text {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  margin-top: 4px;
+}
+
+.form-control {
+  width: 100%;
+  padding: 10px 14px;
+  font-size: 14px;
+  font-family: inherit;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background-color: #FFF;
+  color: var(--color-text-primary);
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.form-control:focus {
+  outline: none;
+  border-color: var(--color-border-focus);
+  box-shadow: 0 0 0 2px rgba(0, 128, 96, 0.2);
+}
+
+.form-row {
+  display: flex;
+  gap: 16px;
+}
+
+.form-row .form-group {
+  flex: 1;
+}
+
+.btn-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 28px;
+  padding-top: 20px;
+  border-top: 1px solid var(--color-border);
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 20px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: none;
+  transition: background-color 0.2s, transform 0.1s;
+  border: none;
+}
+
+.btn-primary {
+  background-color: var(--color-shopify-green);
+  color: #FFF;
+}
+
+.btn-primary:hover {
+  background-color: var(--color-shopify-green-hover);
+}
+
+.btn-secondary {
+  background-color: #F1F2F3;
+  color: var(--color-text-primary);
+  border: 1px solid var(--color-border);
+}
+
+.btn-secondary:hover {
+  background-color: #E4E5E7;
+}
+
+.success-icon {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background-color: var(--color-badge-active-bg);
+  color: var(--color-shopify-green);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 20px auto;
+}
+
+.success-icon svg {
+  width: 36px;
+  height: 36px;
+  fill: currentColor;
+}
+

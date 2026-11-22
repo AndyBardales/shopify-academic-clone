@@ -1,0 +1,8 @@
+{
+  "name": "Wishlist - Lista de Deseos",
+  "slug": "wishlist",
+  "version": "1.0.0",
+  "description": "Permite a los usuarios guardar sus artículos favoritos en una lista de deseos y compartirlos con amigos.",
+  "author": "Grupo 4 - ShopCMS Team"
+}
+

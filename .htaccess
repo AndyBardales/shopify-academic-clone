@@ -1,0 +1,11 @@
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+
+    # Servir archivos y carpetas existentes directamente
+    RewriteCond %{REQUEST_FILENAME} -f [OR]
+    RewriteCond %{REQUEST_FILENAME} -d
+    RewriteRule ^ - [L]
+
+    # Redirigir el resto al index.php del directorio actual
+    RewriteRule ^(.*)$ index.php?route=$1 [QSA,L]
+</IfModule>
