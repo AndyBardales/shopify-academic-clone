@@ -871,7 +871,7 @@ class ThemeCustomizer {
     /**
      * Convierte líneas "Texto | /url" en pares seguros para columnas del footer.
      */
-    public static function parseFooterLinks(string $raw, string $baseUrl): array {
+    public static function parseFooterLinks(string $raw, string $baseUrl, bool $hideGuestAuthLinks = false): array {
         $links = [];
         $lines = preg_split('/\r\n|\r|\n/', trim($raw));
         foreach ($lines as $line) {
@@ -881,6 +881,12 @@ class ThemeCustomizer {
             $label = trim($parts[0]);
             if ($label === '') continue;
             $hrefRaw = isset($parts[1]) ? trim($parts[1]) : '#';
+            if ($hideGuestAuthLinks) {
+                $path = strtolower(trim((string)(parse_url($hrefRaw, PHP_URL_PATH) ?: ''), '/'));
+                if ($path === 'login' || $path === 'register') {
+                    continue;
+                }
+            }
             $href = ($hrefRaw === '#' || str_starts_with($hrefRaw, 'http') || str_starts_with($hrefRaw, 'mailto:') || str_starts_with($hrefRaw, 'tel:'))
                 ? $hrefRaw
                 : rtrim($baseUrl, '/') . '/' . ltrim($hrefRaw, '/');
@@ -915,8 +921,9 @@ class ThemeCustomizer {
             ? ((preg_match('#^https?://#i', $logoUrl) || str_starts_with($logoUrl, '/')) ? $logoUrl : rtrim($baseUrl, '/') . '/' . ltrim($logoUrl, '/'))
             : '';
 
-        $col1Links = self::parseFooterLinks((string)($f['col1_links'] ?? ''), $baseUrl);
-        $col2Links = self::parseFooterLinks((string)($f['col2_links'] ?? ''), $baseUrl);
+        $hideGuestAuthLinks = !self::isEditorPreview() && Auth::isCustomer();
+        $col1Links = self::parseFooterLinks((string)($f['col1_links'] ?? ''), $baseUrl, $hideGuestAuthLinks);
+        $col2Links = self::parseFooterLinks((string)($f['col2_links'] ?? ''), $baseUrl, $hideGuestAuthLinks);
 
         $storePhone = trim(Settings::get('store_phone', ''));
         $storeEmail = trim(Settings::get('store_email', ''));
