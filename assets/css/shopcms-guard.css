@@ -926,30 +926,57 @@ body.shopcms-has-unsaved-changes .polaris-topbar a {
         cursor: pointer;
     }
 }
-@media (max-width: 768px) {
+/* Ocultar barra de desplazamiento visual manteniendo el scroll fluido */
+html,
+body {
+    scrollbar-width: none !important;
+    -ms-overflow-style: none !important;
+}
+html::-webkit-scrollbar,
+body::-webkit-scrollbar {
+    display: none !important;
+    width: 0 !important;
+    height: 0 !important;
+}
+
+@media (max-width: 960px) {
     header.site-header .header-inner {
-        gap: 8px;
+        gap: 10px 12px;
         height: auto;
-        min-height: 60px;
-        padding-top: 8px;
-        padding-bottom: 8px;
+        min-height: 58px;
+        padding: 10px 18px;
         flex-wrap: wrap;
     }
     header.site-header .main-nav {
         order: 3;
+        flex-basis: 100%;
         width: 100%;
-        justify-content: flex-start;
-        gap: 14px;
-        padding-top: 6px;
+        justify-content: center;
+        flex-wrap: wrap;
+        gap: 8px 12px;
+        padding: 9px 4px 2px;
         border-top: 1px solid var(--color-border, rgba(148, 163, 184, 0.25));
-        overflow-x: auto;
         white-space: nowrap;
+    }
+    header.site-header .main-nav a {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 6px 14px;
+        border-radius: 999px;
+        background: rgba(148, 163, 184, 0.12);
+        border: 1px solid rgba(148, 163, 184, 0.22);
+        font-size: 13px;
+        font-weight: 600;
+        line-height: 1.25;
     }
     header.site-header .header-actions {
         margin-left: auto;
         gap: 6px !important;
         flex-shrink: 0;
     }
+}
+@media (max-width: 768px) {
     .scms-wishlist-fab.in-header {
         padding: 6px 9px !important;
         gap: 5px;

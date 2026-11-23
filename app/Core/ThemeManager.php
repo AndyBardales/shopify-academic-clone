@@ -282,7 +282,7 @@ class ThemeManager {
         }
         require $headerFile;
         echo Security::csrfMetaTag() . PHP_EOL;
-        echo '<link rel="stylesheet" href="' . $baseUrl . '/assets/css/shopcms-guard.css?v=20261123e">' . PHP_EOL;
+        echo '<link rel="stylesheet" href="' . $baseUrl . '/assets/css/shopcms-guard.css?v=20261123f">' . PHP_EOL;
         echo ThemeCustomizer::renderGlobalStyleTag($theme) . PHP_EOL;
 
         if (Settings::getBool('maintenance_mode', false) && Auth::isAdmin() && !ThemeCustomizer::isEditorPreview()) {

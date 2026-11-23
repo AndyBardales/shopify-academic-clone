@@ -554,6 +554,17 @@ class ThemeCustomizer {
                 --scms-cat-cols-desktop: <?= $catColsDesktop ?>;
                 --scms-cat-cols-mobile: <?= $catColsMobile ?>;
             }
+            html,
+            body {
+                scrollbar-width: none !important;
+                -ms-overflow-style: none !important;
+            }
+            html::-webkit-scrollbar,
+            body::-webkit-scrollbar {
+                display: none !important;
+                width: 0 !important;
+                height: 0 !important;
+            }
             body {
                 font-family: var(--font-sans);
                 font-size: var(--scms-base-size);
@@ -617,14 +628,14 @@ class ThemeCustomizer {
                 display: grid !important;
                 grid-template-columns: repeat(var(--scms-cat-cols-desktop), minmax(0, 1fr)) !important;
             }
-            @media (max-width: 768px) {
+            @media (max-width: 960px) {
                 .site-header .header-inner {
                     height: auto !important;
                     min-height: 56px;
-                    padding: 10px 0 !important;
+                    padding: 10px 18px !important;
                     flex-wrap: wrap !important;
-                    row-gap: 8px !important;
-                    column-gap: 10px !important;
+                    row-gap: 10px !important;
+                    column-gap: 12px !important;
                 }
                 .site-header .site-logo {
                     font-size: 16px !important;
@@ -661,14 +672,25 @@ class ThemeCustomizer {
                     width: 100% !important;
                     display: flex !important;
                     align-items: center !important;
-                    gap: 16px !important;
-                    padding-top: 8px !important;
+                    justify-content: center !important;
+                    flex-wrap: wrap !important;
+                    gap: 8px 12px !important;
+                    padding: 9px 4px 2px !important;
                     border-top: 1px solid rgba(148, 163, 184, 0.25) !important;
-                    overflow-x: auto !important;
                     white-space: nowrap !important;
                     font-size: 13px !important;
                 }
                 .site-header .main-nav a {
+                    display: inline-flex !important;
+                    align-items: center !important;
+                    justify-content: center !important;
+                    padding: 6px 14px !important;
+                    border-radius: 999px !important;
+                    background: rgba(148, 163, 184, 0.12) !important;
+                    border: 1px solid rgba(148, 163, 184, 0.22) !important;
+                    font-size: 13px !important;
+                    font-weight: 600 !important;
+                    line-height: 1.25 !important;
                     white-space: nowrap !important;
                 }
                 [data-theme-section="featured_products"] .products-grid,
