@@ -110,12 +110,18 @@
                                 </span>
                             </td>
                             <td style="text-align: right; white-space: nowrap;">
-                                <a href="<?= $baseUrl ?>/admin/plugins/toggle/<?= $pl['slug'] ?>" class="btn btn-secondary btn-sm">
-                                    <?= $pl['is_active'] ? 'Desactivar' : 'Activar' ?>
-                                </a>
-                                <a href="<?= $baseUrl ?>/admin/plugins/delete/<?= $pl['slug'] ?>" onclick="return confirm('¿Eliminar permanentemente este plugin y sus archivos?');" class="btn btn-danger btn-sm">
-                                    Eliminar
-                                </a>
+                                <form method="POST" action="<?= $baseUrl ?>/admin/plugins/toggle/<?= $pl['slug'] ?>" style="display: inline;">
+                                    <?= \ShopCMS\Core\Security::csrfField() ?>
+                                    <button type="submit" class="btn btn-secondary btn-sm">
+                                        <?= $pl['is_active'] ? 'Desactivar' : 'Activar' ?>
+                                    </button>
+                                </form>
+                                <form method="POST" action="<?= $baseUrl ?>/admin/plugins/delete/<?= $pl['slug'] ?>" style="display: inline;" onsubmit="return confirm('¿Eliminar permanentemente este plugin y sus archivos?');">
+                                    <?= \ShopCMS\Core\Security::csrfField() ?>
+                                    <button type="submit" class="btn btn-danger btn-sm">
+                                        Eliminar
+                                    </button>
+                                </form>
                             </td>
                         </tr>
                     <?php endforeach; ?>

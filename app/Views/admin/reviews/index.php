@@ -366,15 +366,15 @@ $buildReviewUrl = function(array $overrides = []) use ($baseUrl, $statusFilter, 
                                     <span><?= $hasReply ? 'Editar respuesta' : 'Responder' ?></span>
                                 </button>
 
-                                <a href="<?= $baseUrl ?>/admin/reviews/toggle-featured/<?= $r['id'] ?>"
-                                   class="btn btn-secondary btn-sm"
-                                   style="display: inline-flex; align-items: center; gap: 5px; <?= $isFeatured ? 'background: #FEF3C7; color: #92400E; border-color: #FDE68A;' : 'color: #6B7280;' ?>"
-                                   title="<?= $isFeatured ? 'Quitar de reseñas destacadas' : 'Fijar arriba en la página del producto' ?>">
-                                    <svg width="13" height="13" viewBox="0 0 24 24" fill="<?= $isFeatured ? '#F59E0B' : 'none' ?>" stroke="currentColor" stroke-width="2">
-                                        <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
-                                    </svg>
-                                    <span><?= $isFeatured ? 'Destacada' : 'Destacar' ?></span>
-                                </a>
+                                <form method="POST" action="<?= $baseUrl ?>/admin/reviews/toggle-featured/<?= $r['id'] ?>" style="display: inline;">
+                                    <?= \ShopCMS\Core\Security::csrfField() ?>
+                                    <button type="submit" class="btn btn-secondary btn-sm" style="display: inline-flex; align-items: center; gap: 5px; <?= $isFeatured ? 'background: #FEF3C7; color: #92400E; border-color: #FDE68A;' : 'color: #6B7280;' ?>" title="<?= $isFeatured ? 'Quitar de reseñas destacadas' : 'Fijar arriba en la página del producto' ?>">
+                                        <svg width="13" height="13" viewBox="0 0 24 24" fill="<?= $isFeatured ? '#F59E0B' : 'none' ?>" stroke="currentColor" stroke-width="2">
+                                            <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
+                                        </svg>
+                                        <span><?= $isFeatured ? 'Destacada' : 'Destacar' ?></span>
+                                    </button>
+                                </form>
 
                                 <form method="POST" action="<?= $baseUrl ?>/admin/reviews/update-status/<?= $r['id'] ?>" style="display:inline;">
                                     <input type="hidden" name="status" value="hidden">

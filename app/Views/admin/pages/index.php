@@ -4,9 +4,12 @@
         <p class="page-subtitle">Crea páginas informativas (/page/slug) visibles en el footer y administra tus suscriptores guardados en base de datos.</p>
     </div>
     <div style="display: flex; gap: 10px; flex-wrap: wrap;">
-        <a href="<?= $baseUrl ?>/admin/pages/seed-legal" class="btn btn-secondary">
-            + Generar Plantillas Legales Recomendadas
-        </a>
+        <form method="POST" action="<?= $baseUrl ?>/admin/pages/seed-legal" style="display: inline;">
+            <?= \ShopCMS\Core\Security::csrfField() ?>
+            <button type="submit" class="btn btn-secondary">
+                + Generar Plantillas Legales Recomendadas
+            </button>
+        </form>
         <a href="<?= $baseUrl ?>/admin/newsletter/export" class="btn btn-primary">
             Exportar Suscriptores (CSV)
         </a>
@@ -103,7 +106,10 @@
                                     </td>
                                     <td style="text-align: right; white-space: nowrap;">
                                         <a href="<?= $baseUrl ?>/admin/pages?edit=<?= (int)$pg['id'] ?>" class="btn btn-secondary btn-sm">Editar</a>
-                                        <a href="<?= $baseUrl ?>/admin/pages/delete/<?= (int)$pg['id'] ?>" class="btn btn-secondary btn-sm" style="color: #DC2626;" onclick="return confirm('¿Eliminar esta página?');">Eliminar</a>
+                                        <form method="POST" action="<?= $baseUrl ?>/admin/pages/delete/<?= (int)$pg['id'] ?>" style="display: inline;" onsubmit="return confirm('¿Eliminar esta página?');">
+                                            <?= \ShopCMS\Core\Security::csrfField() ?>
+                                            <button type="submit" class="btn btn-secondary btn-sm" style="color: #DC2626;">Eliminar</button>
+                                        </form>
                                     </td>
                                 </tr>
                             <?php endforeach; ?>
@@ -151,7 +157,10 @@
                                         <?= date('d/m/Y H:i', strtotime((string)$sub['created_at'])) ?>
                                     </td>
                                     <td style="text-align: right;">
-                                        <a href="<?= $baseUrl ?>/admin/newsletter/delete/<?= (int)$sub['id'] ?>" class="btn btn-secondary btn-sm" style="color: #DC2626;" onclick="return confirm('¿Quitar este suscriptor?');">Quitar</a>
+                                        <form method="POST" action="<?= $baseUrl ?>/admin/newsletter/delete/<?= (int)$sub['id'] ?>" style="display: inline;" onsubmit="return confirm('¿Quitar este suscriptor?');">
+                                            <?= \ShopCMS\Core\Security::csrfField() ?>
+                                            <button type="submit" class="btn btn-secondary btn-sm" style="color: #DC2626;">Quitar</button>
+                                        </form>
                                     </td>
                                 </tr>
                             <?php endforeach; ?>

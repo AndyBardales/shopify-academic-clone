@@ -205,20 +205,26 @@
 
                                     <!-- BORRADO LÓGICO / ACTIVAR / DESHABILITAR -->
                                     <?php if (!empty($p['is_active'])): ?>
-                                        <a href="<?= $baseUrl ?>/admin/products/toggle/<?= $p['id'] ?>" class="btn btn-secondary btn-sm" style="display: inline-flex; align-items: center; gap: 5px; color: #B95000;" title="Deshabilitar producto (borrado lógico: oculta en tienda sin eliminar datos)">
-                                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                                <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
-                                                <line x1="1" y1="1" x2="23" y2="23"></line>
-                                            </svg>
-                                            <span>Deshabilitar</span>
-                                        </a>
+                                        <form method="POST" action="<?= $baseUrl ?>/admin/products/toggle/<?= $p['id'] ?>" style="display: inline;">
+                                            <?= \ShopCMS\Core\Security::csrfField() ?>
+                                            <button type="submit" class="btn btn-secondary btn-sm" style="display: inline-flex; align-items: center; gap: 5px; color: #B95000;" title="Deshabilitar producto (borrado lógico: oculta en tienda sin eliminar datos)">
+                                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                                    <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
+                                                    <line x1="1" y1="1" x2="23" y2="23"></line>
+                                                </svg>
+                                                <span>Deshabilitar</span>
+                                            </button>
+                                        </form>
                                     <?php else: ?>
-                                        <a href="<?= $baseUrl ?>/admin/products/toggle/<?= $p['id'] ?>" class="btn btn-secondary btn-sm" style="display: inline-flex; align-items: center; gap: 5px; color: #008060; border-color: #008060;" title="Activar y mostrar en tienda web">
-                                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                                <polyline points="20 6 9 17 4 12"></polyline>
-                                            </svg>
-                                            <span>Activar</span>
-                                        </a>
+                                        <form method="POST" action="<?= $baseUrl ?>/admin/products/toggle/<?= $p['id'] ?>" style="display: inline;">
+                                            <?= \ShopCMS\Core\Security::csrfField() ?>
+                                            <button type="submit" class="btn btn-secondary btn-sm" style="display: inline-flex; align-items: center; gap: 5px; color: #008060; border-color: #008060;" title="Activar y mostrar en tienda web">
+                                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                                    <polyline points="20 6 9 17 4 12"></polyline>
+                                                </svg>
+                                                <span>Activar</span>
+                                            </button>
+                                        </form>
                                     <?php endif; ?>
 
                                     <!-- VER EN TIENDA (VISTA PREVIA SECUNDARIA) -->

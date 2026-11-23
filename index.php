@@ -98,6 +98,7 @@ use ShopCMS\Controllers\StoreController;
 
 // --- Rutas del Panel de AdministraciÃ³n (Polaris) ---
 Router::get('/admin', [AdminController::class, 'dashboard']);
+Router::get('/admin/reports/sales-export', [AdminController::class, 'salesReportExport']);
 Router::get('/admin/login', [AdminController::class, 'loginForm']);
 Router::post('/admin/login', [AdminController::class, 'loginSubmit']);
 Router::get('/admin/logout', [AdminController::class, 'logout']);
@@ -108,16 +109,16 @@ Router::get('/admin/products/create', [AdminController::class, 'productCreate'])
 Router::post('/admin/products/store', [AdminController::class, 'productStore']);
 Router::get('/admin/products/edit/{id}', [AdminController::class, 'productEdit']);
 Router::post('/admin/products/update/{id}', [AdminController::class, 'productUpdate']);
-Router::get('/admin/products/toggle/{id}', [AdminController::class, 'productToggle']);
-Router::get('/admin/products/delete/{id}', [AdminController::class, 'productDelete']);
+Router::post('/admin/products/toggle/{id}', [AdminController::class, 'productToggle']);
+Router::post('/admin/products/delete/{id}', [AdminController::class, 'productDelete']);
 
 // GestiÃ³n de CategorÃ­as JerÃ¡rquicas y Presets
 Router::get('/admin/categories', [AdminController::class, 'categories']);
 Router::post('/admin/categories/store', [AdminController::class, 'categoryStore']);
 Router::post('/admin/categories/update/{id}', [AdminController::class, 'categoryUpdate']);
-Router::get('/admin/categories/toggle/{id}', [AdminController::class, 'categoryToggle']);
-Router::get('/admin/categories/delete/{id}', [AdminController::class, 'categoryDelete']);
-Router::get('/admin/categories/seed-preset', [AdminController::class, 'categorySeedPreset']);
+Router::post('/admin/categories/toggle/{id}', [AdminController::class, 'categoryToggle']);
+Router::post('/admin/categories/delete/{id}', [AdminController::class, 'categoryDelete']);
+Router::post('/admin/categories/seed-preset', [AdminController::class, 'categorySeedPreset']);
 
 // MÃ³dulo 3: GestiÃ³n de Pedidos y Estados
 Router::get('/admin/orders', [AdminController::class, 'orders']);
@@ -129,16 +130,16 @@ Router::post('/admin/orders/update-status/{id}', [AdminController::class, 'order
 Router::get('/admin/coupons', [AdminController::class, 'coupons']);
 Router::post('/admin/coupons/store', [AdminController::class, 'couponStore']);
 Router::post('/admin/coupons/update/{id}', [AdminController::class, 'couponUpdate']);
-Router::get('/admin/coupons/toggle/{id}', [AdminController::class, 'couponToggle']);
-Router::get('/admin/coupons/delete/{id}', [AdminController::class, 'couponDelete']);
+Router::post('/admin/coupons/toggle/{id}', [AdminController::class, 'couponToggle']);
+Router::post('/admin/coupons/delete/{id}', [AdminController::class, 'couponDelete']);
 
 // GestiÃ³n de Clientes (Personas que compran en la tienda)
 Router::get('/admin/customers', [AdminController::class, 'customers']);
 Router::post('/admin/customers/store', [AdminController::class, 'customerStore']);
 Router::get('/admin/customers/view/{id}', [AdminController::class, 'customerView']);
 Router::post('/admin/customers/update/{id}', [AdminController::class, 'customerUpdate']);
-Router::get('/admin/customers/toggle/{id}', [AdminController::class, 'customerToggle']);
-Router::get('/admin/customers/delete/{id}', [AdminController::class, 'customerDelete']);
+Router::post('/admin/customers/toggle/{id}', [AdminController::class, 'customerToggle']);
+Router::post('/admin/customers/delete/{id}', [AdminController::class, 'customerDelete']);
 
 // MÃ³dulo 5: Inventario y Alertas de Stock
 Router::get('/admin/inventory', [AdminController::class, 'inventory']);
@@ -148,19 +149,19 @@ Router::post('/admin/inventory/update', [AdminController::class, 'inventoryUpdat
 Router::get('/admin/reviews', [AdminController::class, 'reviews']);
 Router::post('/admin/reviews/update-status/{id}', [AdminController::class, 'reviewUpdateStatus']);
 Router::post('/admin/reviews/reply/{id}', [AdminController::class, 'reviewReply']);
-Router::get('/admin/reviews/toggle-featured/{id}', [AdminController::class, 'reviewToggleFeatured']);
+Router::post('/admin/reviews/toggle-featured/{id}', [AdminController::class, 'reviewToggleFeatured']);
 
 // GestiÃ³n de Plugins (Subida ZIP y activaciÃ³n)
 Router::get('/admin/plugins', [AdminController::class, 'plugins']);
 Router::post('/admin/plugins/upload', [AdminController::class, 'pluginUpload']);
-Router::get('/admin/plugins/toggle/{slug}', [AdminController::class, 'pluginToggle']);
-Router::get('/admin/plugins/delete/{slug}', [AdminController::class, 'pluginDelete']);
+Router::post('/admin/plugins/toggle/{slug}', [AdminController::class, 'pluginToggle']);
+Router::post('/admin/plugins/delete/{slug}', [AdminController::class, 'pluginDelete']);
 
 // GestiÃ³n de Temas
 Router::get('/admin/themes', [AdminController::class, 'themes']);
 Router::post('/admin/themes/upload', [AdminController::class, 'themeUpload']);
-Router::get('/admin/themes/activate/{slug}', [AdminController::class, 'themeActivate']);
-Router::get('/admin/themes/delete/{slug}', [AdminController::class, 'themeDelete']);
+Router::post('/admin/themes/activate/{slug}', [AdminController::class, 'themeActivate']);
+Router::post('/admin/themes/delete/{slug}', [AdminController::class, 'themeDelete']);
 Router::get('/admin/themes/customize/{slug}', [AdminController::class, 'themeCustomize']);
 Router::post('/admin/themes/customize/{slug}/save', [AdminController::class, 'themeCustomizeSave']);
 Router::post('/admin/themes/customize/{slug}/reset', [AdminController::class, 'themeCustomizeReset']);
@@ -174,10 +175,10 @@ Router::post('/admin/settings/save', [AdminController::class, 'settingsSave']);
 Router::get('/admin/pages', [AdminController::class, 'pages']);
 Router::post('/admin/pages/store', [AdminController::class, 'pageStore']);
 Router::post('/admin/pages/update/{id}', [AdminController::class, 'pageUpdate']);
-Router::get('/admin/pages/delete/{id}', [AdminController::class, 'pageDelete']);
-Router::get('/admin/pages/seed-legal', [AdminController::class, 'pageSeedLegal']);
+Router::post('/admin/pages/delete/{id}', [AdminController::class, 'pageDelete']);
+Router::post('/admin/pages/seed-legal', [AdminController::class, 'pageSeedLegal']);
 Router::get('/admin/newsletter/export', [AdminController::class, 'newsletterExport']);
-Router::get('/admin/newsletter/delete/{id}', [AdminController::class, 'newsletterDelete']);
+Router::post('/admin/newsletter/delete/{id}', [AdminController::class, 'newsletterDelete']);
 
 // --- Rutas de la Tienda (Storefront / Minimal Shop) ---
 Router::get('/', [StoreController::class, 'home']);
@@ -190,9 +191,9 @@ Router::post('/newsletter/subscribe', [StoreController::class, 'newsletterSubscr
 Router::get('/cart', [StoreController::class, 'cart']);
 Router::post('/cart/add', [StoreController::class, 'cartAdd']);
 Router::post('/cart/update', [StoreController::class, 'cartUpdate']);
-Router::get('/cart/remove/{itemKey}', [StoreController::class, 'cartRemove']);
+Router::post('/cart/remove/{itemKey}', [StoreController::class, 'cartRemove']);
 Router::post('/cart/apply-coupon', [StoreController::class, 'applyCoupon']);
-Router::get('/cart/remove-coupon', [StoreController::class, 'removeCoupon']);
+Router::post('/cart/remove-coupon', [StoreController::class, 'removeCoupon']);
 
 Router::get('/checkout', [StoreController::class, 'checkout']);
 Router::post('/checkout/process', [StoreController::class, 'processOrder']);

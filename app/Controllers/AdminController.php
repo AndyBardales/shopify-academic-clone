@@ -103,8 +103,9 @@ class AdminController {
     // DASHBOARD
     // ==========================================
     public function dashboard(): void {
-        $totalSales = Database::fetch("SELECT SUM(total) as sum_total FROM " . Database::table('orders') . " WHERE status NOT IN ('cancelled', 'returned')")['sum_total'] ?? 0;
-        $totalOrders = Database::fetch("SELECT COUNT(*) as count_orders FROM " . Database::table('orders'))['count_orders'] ?? 0;
+        $period = \ShopCMS\Core\DashboardAnalytics::normalizePeriod($_GET['period'] ?? '30d');
+        $analytics = \ShopCMS\Core\DashboardAnalytics::getSummaryAndCharts($period);
+
         $totalProducts = Database::fetch("SELECT COUNT(*) as count_products FROM " . Database::table('products') . " WHERE is_active = 1")['count_products'] ?? 0;
         $lowStockNotify = Settings::getBool('inventory_low_stock_notification', true);
         if ($lowStockNotify) {
@@ -132,16 +133,54 @@ class AdminController {
         }
 
         $currency = Database::fetch("SELECT setting_value FROM " . Database::table('settings') . " WHERE setting_key = 'store_currency_symbol'")['setting_value'] ?? '$';
+        $summary = $analytics['summary'];
 
         $this->render('dashboard', [
-            'totalSales' => number_format((float)$totalSales, 2),
-            'totalOrders' => $totalOrders,
-            'totalProducts' => $totalProducts,
-            'lowStockCount' => $lowStockCount,
-            'recentOrders' => $recentOrders,
-            'lowStockItems' => $lowStockItems,
-            'currency' => $currency
+            'totalSales'      => number_format((float)$summary['gross_sales'], 2),
+            'paidSales'       => number_format((float)$summary['paid_sales'], 2),
+            'pendingSales'    => number_format((float)$summary['pending_sales'], 2),
+            'avgTicket'       => number_format((float)$summary['avg_ticket'], 2),
+            'totalOrders'     => (int)$summary['total_orders'],
+            'activeOrders'    => (int)$summary['active_orders'],
+            'cancelledOrders' => (int)$summary['cancelled_orders'],
+            'totalProducts'   => $totalProducts,
+            'lowStockCount'   => $lowStockCount,
+            'recentOrders'    => $recentOrders,
+            'lowStockItems'   => $lowStockItems,
+            'currency'        => $currency,
+            'analytics'       => $analytics,
         ]);
+    }
+
+    public function salesReportExport(): void {
+        $period = \ShopCMS\Core\DashboardAnalytics::normalizePeriod($_GET['period'] ?? '30d');
+        $orders = \ShopCMS\Core\DashboardAnalytics::getExportOrders($period);
+
+        header('Content-Type: text/csv; charset=utf-8');
+        header('Content-Disposition: attachment; filename="reporte-ventas-' . $period . '-' . date('Ymd-His') . '.csv"');
+        echo "\xEF\xBB\xBF";
+        $out = fopen('php://output', 'w');
+        fputcsv($out, ['Nro Pedido', 'Fecha', 'Cliente', 'Correo', 'Metodo Pago', 'Estado Pago', 'Estado Logistico', 'Subtotal', 'Descuento', 'Envio', 'Impuesto', 'Total']);
+        foreach ($orders as $ord) {
+            $stMeta = OrderWorkflow::getStatusMeta((string)$ord['status']);
+            $payMeta = OrderWorkflow::getPaymentMeta((string)$ord['payment_status']);
+            fputcsv($out, [
+                $ord['order_number'],
+                $ord['created_at'],
+                $ord['customer_name'],
+                $ord['customer_email'],
+                OrderWorkflow::paymentMethodLabel((string)$ord['payment_method']),
+                $payMeta['label'],
+                $stMeta['short'],
+                number_format((float)$ord['subtotal'], 2, '.', ''),
+                number_format((float)$ord['discount_amount'], 2, '.', ''),
+                number_format((float)($ord['shipping_amount'] ?? 0), 2, '.', ''),
+                number_format((float)($ord['tax_amount'] ?? 0), 2, '.', ''),
+                number_format((float)$ord['total'], 2, '.', ''),
+            ]);
+        }
+        fclose($out);
+        exit;
     }
 
     // ==========================================
@@ -1010,7 +1049,7 @@ class AdminController {
     }
 
     public function categorySeedPreset(): void {
-        $industry = trim($_GET['industry'] ?? '');
+        $industry = trim($_POST['industry'] ?? ($_GET['industry'] ?? ''));
         if (empty($industry)) {
             $industry = Database::fetch("SELECT setting_value FROM " . Database::table('settings') . " WHERE setting_key = 'store_industry'")['setting_value'] ?? 'fashion';
         }
@@ -2440,7 +2479,7 @@ class AdminController {
                 : "Cliente '{$customer['name']}' deshabilitado (borrado lógico). Su acceso web fue bloqueado manteniendo intacto su historial de pedidos.";
         }
 
-        $redirectTo = ($_GET['redirect'] ?? '') === 'view' ? '/admin/customers/view/' . $custId : '/admin/customers';
+        $redirectTo = (($_POST['redirect'] ?? ($_GET['redirect'] ?? '')) === 'view') ? '/admin/customers/view/' . $custId : '/admin/customers';
         header('Location: ' . (defined('APP_URL') ? APP_URL : '') . $redirectTo);
         exit;
     }

@@ -161,19 +161,25 @@
                                 Tema Actual en Tienda
                             </button>
                         <?php else: ?>
-                            <a href="<?= $baseUrl ?>/admin/themes/activate/<?= $th['slug'] ?>" class="btn btn-primary btn-sm" style="flex: 1; text-align: center; display: inline-flex; align-items: center; justify-content: center; gap: 6px;">
-                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                    <polygon points="5 3 19 12 5 21 5 3"></polygon>
-                                </svg>
-                                Activar este Tema
-                            </a>
-                            <?php if ($slug !== 'minimal-shop'): ?>
-                                <a href="<?= $baseUrl ?>/admin/themes/delete/<?= $th['slug'] ?>" onclick="return confirm('¿Eliminar permanentemente este tema y sus archivos?');" class="btn btn-danger btn-sm" title="Eliminar plantilla" style="padding: 6px 10px;">
+                            <form method="POST" action="<?= $baseUrl ?>/admin/themes/activate/<?= $th['slug'] ?>" style="display: flex; flex: 1;">
+                                <?= \ShopCMS\Core\Security::csrfField() ?>
+                                <button type="submit" class="btn btn-primary btn-sm" style="flex: 1; text-align: center; display: inline-flex; align-items: center; justify-content: center; gap: 6px;">
                                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                        <polyline points="3 6 5 6 21 6"></polyline>
-                                        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                                        <polygon points="5 3 19 12 5 21 5 3"></polygon>
                                     </svg>
-                                </a>
+                                    Activar este Tema
+                                </button>
+                            </form>
+                            <?php if ($slug !== 'minimal-shop'): ?>
+                                <form method="POST" action="<?= $baseUrl ?>/admin/themes/delete/<?= $th['slug'] ?>" style="display: inline;" onsubmit="return confirm('¿Eliminar permanentemente este tema y sus archivos?');">
+                                    <?= \ShopCMS\Core\Security::csrfField() ?>
+                                    <button type="submit" class="btn btn-danger btn-sm" title="Eliminar plantilla" style="padding: 6px 10px;">
+                                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                            <polyline points="3 6 5 6 21 6"></polyline>
+                                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                                        </svg>
+                                    </button>
+                                </form>
                             <?php endif; ?>
                         <?php endif; ?>
                     </div>
