@@ -49,12 +49,13 @@ class Router {
     }
 
     private static function callHandler($handler, array $params = []): void {
+        $positionalArgs = array_values($params);
         if (is_callable($handler)) {
-            call_user_func_array($handler, $params);
+            call_user_func_array($handler, $positionalArgs);
         } elseif (is_array($handler)) {
             [$class, $method] = $handler;
             $controller = new $class();
-            call_user_func_array([$controller, $method], $params);
+            call_user_func_array([$controller, $method], $positionalArgs);
         }
     }
 }
