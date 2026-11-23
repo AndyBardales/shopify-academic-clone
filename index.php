@@ -207,6 +207,10 @@ Router::get('/order/receipt/{order_number}', [StoreController::class, 'orderRece
 // AutenticaciÃ³n de Clientes y Portal de Compras
 Router::get('/login', [StoreController::class, 'customerLogin']);
 Router::post('/login', [StoreController::class, 'customerLoginProcess']);
+Router::get('/forgot-password', [StoreController::class, 'forgotPasswordForm']);
+Router::post('/forgot-password', [StoreController::class, 'forgotPasswordSubmit']);
+Router::get('/reset-password', [StoreController::class, 'resetPasswordForm']);
+Router::post('/reset-password', [StoreController::class, 'resetPasswordSubmit']);
 Router::get('/register', [StoreController::class, 'customerRegister']);
 Router::post('/register', [StoreController::class, 'customerRegisterProcess']);
 Router::get('/logout', [StoreController::class, 'customerLogout']);

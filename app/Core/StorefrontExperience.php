@@ -246,6 +246,34 @@ class StorefrontExperience {
         }
     }
 
+    private static bool $resetTableEnsured = false;
+
+    /**
+     * Crea de forma idempotente la tabla de recuperación de contraseña si falta.
+     */
+    public static function ensurePasswordResetsTable(): void {
+        if (self::$resetTableEnsured) {
+            return;
+        }
+        self::$resetTableEnsured = true;
+        try {
+            $table = Database::table('password_resets');
+            Database::getInstance()->exec("
+                CREATE TABLE IF NOT EXISTS {$table} (
+                    `id` INT AUTO_INCREMENT PRIMARY KEY,
+                    `email` VARCHAR(150) NOT NULL,
+                    `token_hash` VARCHAR(64) NOT NULL,
+                    `expires_at` DATETIME NOT NULL,
+                    `used_at` DATETIME NULL,
+                    `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    INDEX `idx_reset_token_hash` (`token_hash`),
+                    INDEX `idx_reset_email` (`email`)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+            ");
+        } catch (\Throwable $e) {
+        }
+    }
+
     /**
      * Convierte texto multilinea ("Clave: Valor") o JSON en filas estructuradas de especificaciones.
      */

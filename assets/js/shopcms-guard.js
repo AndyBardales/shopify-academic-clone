@@ -661,6 +661,7 @@
             initProductLinksNewTab();
             initProductVariantsAndGallerySync();
             initProductSideBasket();
+            initCheckoutDoubleSubmitGuard();
         }
     });
 
@@ -1375,6 +1376,46 @@
         if (payload.initial_variant) {
             applyVariantRich(payload.initial_variant, { skipGallerySync: false });
         }
+    }
+
+    function initCheckoutDoubleSubmitGuard() {
+        const selector = 'form[action$="/checkout/process"], form[action$="/login"], form[action$="/register"], form[action$="/forgot-password"], form[action$="/reset-password"]';
+        document.querySelectorAll(selector).forEach(function(form) {
+            form.addEventListener('submit', function() {
+                if (typeof form.checkValidity === 'function' && !form.checkValidity()) {
+                    return;
+                }
+                if (form.dataset.scmsSubmitting === '1') {
+                    return;
+                }
+                form.dataset.scmsSubmitting = '1';
+                const btns = form.querySelectorAll('button[type="submit"], input[type="submit"]');
+                btns.forEach(function(btn) {
+                    btn.dataset.origLabel = btn.tagName === 'BUTTON' ? btn.textContent : btn.value;
+                    btn.disabled = true;
+                    btn.style.opacity = '0.72';
+                    btn.style.cursor = 'wait';
+                    if (btn.tagName === 'BUTTON') {
+                        btn.textContent = form.action.indexOf('/checkout/process') !== -1
+                            ? 'Confirmando pedido...'
+                            : 'Procesando...';
+                    }
+                });
+                setTimeout(function() {
+                    if (form.dataset.scmsSubmitting === '1') {
+                        delete form.dataset.scmsSubmitting;
+                        btns.forEach(function(btn) {
+                            btn.disabled = false;
+                            btn.style.opacity = '';
+                            btn.style.cursor = '';
+                            if (btn.tagName === 'BUTTON' && btn.dataset.origLabel) {
+                                btn.textContent = btn.dataset.origLabel;
+                            }
+                        });
+                    }
+                }, 15000);
+            });
+        });
     }
 
     function getCsrfToken() {

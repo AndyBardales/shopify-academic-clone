@@ -11,6 +11,13 @@ $cartSum = $cartCfg['cart_summary'] ?? [];
         </section>
     <?php endif; ?>
 
+    <?php if (!empty($_SESSION['cart_notice'])): ?>
+        <div style="background: #ECFDF5; border: 1px solid #A7F3D0; color: #065F46; padding: 12px 16px; border-radius: 8px; margin-bottom: 18px; font-size: 13.5px; font-weight: 600;">
+            <?= htmlspecialchars($_SESSION['cart_notice']) ?>
+        </div>
+        <?php unset($_SESSION['cart_notice']); ?>
+    <?php endif; ?>
+
     <?php if (empty($cart)): ?>
         <div data-theme-section="cart_items" data-section-label="Contenido del Carrito" style="text-align: center; padding: 60px 20px; background: var(--color-surface); border-radius: 12px; border: 1px solid var(--color-border);">
             <svg width="64" height="64" viewBox="0 0 24 24" fill="#9CA3AF" style="margin-bottom: 16px;">

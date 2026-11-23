@@ -46,7 +46,10 @@
             </div>
 
             <div style="margin-bottom: 22px;">
-                <label for="login-password" style="display: block; font-size: 13px; font-weight: 600; color: var(--color-text); margin-bottom: 6px;">Contraseña *</label>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; gap: 8px;">
+                    <label for="login-password" style="display: block; font-size: 13px; font-weight: 600; color: var(--color-text); margin: 0;">Contraseña *</label>
+                    <a href="<?= $baseUrl ?>/forgot-password" style="font-size: 12px; font-weight: 600; color: var(--color-primary, #008060); text-decoration: none;">¿Olvidaste tu contraseña?</a>
+                </div>
                 <div style="position: relative;">
                     <input type="password" id="login-password" name="password" required placeholder="••••••••" style="width: 100%; padding: 10px 42px 10px 14px; border: 1px solid var(--color-border); border-radius: 8px; font-size: 14px;">
                     <button type="button" onclick="toggleLoginPass(this)" aria-label="Mostrar u ocultar contraseña" title="Mostrar / Ocultar contraseña" style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: none; border: none; color: #6B7280; cursor: pointer; display: inline-flex; padding: 4px;">

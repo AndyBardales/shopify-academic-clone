@@ -350,6 +350,90 @@ class StoreController {
         ]);
     }
 
+    private function addProductToSessionCart(array $product, ?int $variantId, int $quantity): array {
+        $productId = (int)$product['id'];
+        $title = (string)$product['name'];
+        $price = (float)$product['price'];
+        $image = (string)($product['featured_image'] ?? '');
+
+        if ($variantId) {
+            $variant = Database::fetch("SELECT * FROM " . Database::table('product_variants') . " WHERE id = ? AND product_id = ?", [$variantId, $productId]);
+            if ($variant) {
+                $title .= " (" . $variant['title'] . ")";
+                $price = (float)$variant['price'];
+                if (!empty($variant['image_url'])) {
+                    $image = (string)$variant['image_url'];
+                }
+            } else {
+                $variantId = null;
+            }
+        }
+
+        $cartKey = $variantId ? "prod_{$productId}_var_{$variantId}" : "prod_{$productId}";
+        if (!isset($_SESSION['cart']) || !is_array($_SESSION['cart'])) {
+            $_SESSION['cart'] = [];
+        }
+
+        $currentInCart = isset($_SESSION['cart'][$cartKey]) ? (int)$_SESSION['cart'][$cartKey]['quantity'] : 0;
+        $desiredQty = $currentInCart + max(1, $quantity);
+        $stockInfo = InventoryManager::getAvailableStock($productId, $variantId);
+        $noticeMsg = 'Producto agregado a tu cesta.';
+        $wasClamped = false;
+
+        if ($stockInfo['track']) {
+            if ($stockInfo['available'] <= 0) {
+                return ['ok' => false, 'error' => "Lo sentimos, '{$title}' se encuentra agotado temporalmente.", 'notice' => '', 'clamped' => false];
+            }
+            if ($desiredQty > $stockInfo['available']) {
+                $desiredQty = $stockInfo['available'];
+                $noticeMsg = "Se ajustó la cantidad de '{$title}' al máximo disponible en almacén ({$stockInfo['available']} unid.).";
+                $wasClamped = true;
+            }
+        }
+
+        if (isset($_SESSION['cart'][$cartKey])) {
+            $_SESSION['cart'][$cartKey]['quantity'] = $desiredQty;
+        } else {
+            $_SESSION['cart'][$cartKey] = [
+                'product_id' => $productId,
+                'variant_id' => $variantId,
+                'name' => $title,
+                'price' => $price,
+                'quantity' => $desiredQty,
+                'image' => $image
+            ];
+        }
+
+        \ShopCMS\Core\Auth::saveCustomerCart();
+        return ['ok' => true, 'error' => null, 'notice' => $noticeMsg, 'clamped' => $wasClamped, 'title' => $title];
+    }
+
+    private function consumePendingCartAdd(): ?string {
+        if (empty($_SESSION['pending_cart_add']) || !is_array($_SESSION['pending_cart_add']) || !\ShopCMS\Core\Auth::isCustomer()) {
+            unset($_SESSION['pending_cart_add']);
+            return null;
+        }
+        $pending = $_SESSION['pending_cart_add'];
+        unset($_SESSION['pending_cart_add']);
+
+        $pid = (int)($pending['product_id'] ?? 0);
+        $vid = !empty($pending['variant_id']) ? (int)$pending['variant_id'] : null;
+        $qty = max(1, (int)($pending['quantity'] ?? 1));
+        $buyNow = !empty($pending['buy_now']);
+
+        if ($pid <= 0) return null;
+        $product = Database::fetch("SELECT * FROM " . Database::table('products') . " WHERE id = ? AND is_active = 1", [$pid]);
+        if (!$product) return null;
+
+        $res = $this->addProductToSessionCart($product, $vid, $qty);
+        if (!$res['ok']) {
+            $_SESSION['cart_error'] = $res['error'];
+            return '/cart';
+        }
+        $_SESSION['cart_notice'] = 'Artículo "' . ($res['title'] ?? $product['name']) . '" agregado automáticamente a tu cesta.';
+        return $buyNow ? '/checkout' : null;
+    }
+
     public function cartAdd(): void {
         $wantsJson = str_contains(strtolower((string)($_SERVER['HTTP_ACCEPT'] ?? '')), 'application/json')
             || (($_POST['ajax'] ?? '') === '1');
@@ -359,7 +443,7 @@ class StoreController {
         $variantId = !empty($_POST['variant_id']) ? (int)$_POST['variant_id'] : null;
         $quantity = max(1, (int)($_POST['quantity'] ?? 1));
 
-        $product = Database::fetch("SELECT * FROM " . Database::table('products') . " WHERE id = ?", [$productId]);
+        $product = Database::fetch("SELECT * FROM " . Database::table('products') . " WHERE id = ? AND is_active = 1", [$productId]);
         if (!$product) {
             if (!\ShopCMS\Core\Auth::isCustomer()) {
                 if ($wantsJson) {
@@ -381,87 +465,47 @@ class StoreController {
             exit;
         }
 
-        if (!\ShopCMS\Core\Auth::isCustomer() && $wantsJson) {
-            header('Content-Type: application/json; charset=utf-8');
-            http_response_code(401);
-            $_SESSION['checkout_notice'] = "Inicia sesión para agregar productos a tu carrito de compras.";
-            echo json_encode([
-                'ok' => false,
-                'require_login' => true,
-                'login_url' => $baseUrl . '/login?auth_msg=cart&redirect=' . urlencode('/product/' . $product['slug']),
-            ]);
-            exit;
-        }
-
-        $this->requireCustomer("Inicia sesión para agregar productos a tu carrito de compras.", "/product/" . $product['slug']);
-
-        $title = $product['name'];
-        $price = $product['price'];
-        $image = $product['featured_image'] ?: '';
-
-        if ($variantId) {
-            $variant = Database::fetch("SELECT * FROM " . Database::table('product_variants') . " WHERE id = ?", [$variantId]);
-            if ($variant) {
-                $title .= " (" . $variant['title'] . ")";
-                $price = $variant['price'];
-                if (!empty($variant['image_url'])) {
-                    $image = $variant['image_url'];
-                }
-            }
-        }
-
-        $cartKey = $variantId ? "prod_{$productId}_var_{$variantId}" : "prod_{$productId}";
-
-        if (!isset($_SESSION['cart'])) {
-            $_SESSION['cart'] = [];
-        }
-
-        $currentInCart = isset($_SESSION['cart'][$cartKey]) ? (int)$_SESSION['cart'][$cartKey]['quantity'] : 0;
-        $desiredQty = $currentInCart + $quantity;
-        $stockInfo = InventoryManager::getAvailableStock($productId, $variantId);
-        $noticeMsg = 'Producto agregado a tu cesta.';
-
-        if ($stockInfo['track']) {
-            if ($stockInfo['available'] <= 0) {
-                $errMsg = "Lo sentimos, '{$title}' se encuentra agotado temporalmente.";
-                if ($wantsJson) {
-                    header('Content-Type: application/json; charset=utf-8');
-                    http_response_code(409);
-                    echo json_encode(['ok' => false, 'error' => $errMsg, 'basket' => StorefrontExperience::buildSideBasketData()], JSON_UNESCAPED_UNICODE);
-                    exit;
-                }
-                $_SESSION['cart_error'] = $errMsg;
-                header('Location: ' . $baseUrl . '/cart');
-                exit;
-            }
-            if ($desiredQty > $stockInfo['available']) {
-                $desiredQty = $stockInfo['available'];
-                $noticeMsg = "Se ajustó la cantidad de '{$title}' al máximo disponible en almacén ({$stockInfo['available']} unid.).";
-                if (!$wantsJson) {
-                    $_SESSION['cart_error'] = $noticeMsg;
-                }
-            }
-        }
-
-        if (isset($_SESSION['cart'][$cartKey])) {
-            $_SESSION['cart'][$cartKey]['quantity'] = $desiredQty;
-        } else {
-            $_SESSION['cart'][$cartKey] = [
+        if (!\ShopCMS\Core\Auth::isCustomer()) {
+            $_SESSION['pending_cart_add'] = [
                 'product_id' => $productId,
                 'variant_id' => $variantId,
-                'name' => $title,
-                'price' => (float)$price,
-                'quantity' => $desiredQty,
-                'image' => $image
+                'quantity' => $quantity,
+                'buy_now' => !empty($_POST['buy_now']),
             ];
+            if ($wantsJson) {
+                header('Content-Type: application/json; charset=utf-8');
+                http_response_code(401);
+                $_SESSION['checkout_notice'] = "Inicia sesión para agregar productos a tu carrito de compras.";
+                echo json_encode([
+                    'ok' => false,
+                    'require_login' => true,
+                    'login_url' => $baseUrl . '/login?auth_msg=cart&redirect=' . urlencode('/product/' . $product['slug']),
+                ]);
+                exit;
+            }
+            $this->requireCustomer("Inicia sesión para agregar productos a tu carrito de compras.", "/product/" . $product['slug']);
         }
 
-        \ShopCMS\Core\Auth::saveCustomerCart();
+        $res = $this->addProductToSessionCart($product, $variantId, $quantity);
+        if (!$res['ok']) {
+            if ($wantsJson) {
+                header('Content-Type: application/json; charset=utf-8');
+                http_response_code(409);
+                echo json_encode(['ok' => false, 'error' => $res['error'], 'basket' => StorefrontExperience::buildSideBasketData()], JSON_UNESCAPED_UNICODE);
+                exit;
+            }
+            $_SESSION['cart_error'] = $res['error'];
+            header('Location: ' . $baseUrl . '/cart');
+            exit;
+        }
+        if ($res['clamped'] && !$wantsJson) {
+            $_SESSION['cart_error'] = $res['notice'];
+        }
         if ($wantsJson) {
             header('Content-Type: application/json; charset=utf-8');
             echo json_encode([
                 'ok' => true,
-                'notice' => $noticeMsg,
+                'notice' => $res['notice'],
                 'basket' => StorefrontExperience::buildSideBasketData(),
             ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
             exit;
@@ -958,8 +1002,9 @@ class StoreController {
             \ShopCMS\Core\Security::clearLoginAttempts('customer', $email);
             unset($_SESSION['customer_last_attempt_email'], $_SESSION['customer_lockout_seconds']);
             @session_regenerate_id(true);
+            $pendingDest = $this->consumePendingCartAdd();
             session_write_close();
-            $destination = $this->resolvePostAuthDestination($redirect);
+            $destination = $pendingDest ?: $this->resolvePostAuthDestination($redirect);
             header('Location: ' . (defined('APP_URL') ? APP_URL : '') . $destination);
             exit;
         }
@@ -1048,7 +1093,8 @@ class StoreController {
 
         try {
             \ShopCMS\Core\Auth::customerRegister($name, $email, $password, $phone, $address);
-            $destination = $this->resolvePostAuthDestination($redirect);
+            $pendingDest = $this->consumePendingCartAdd();
+            $destination = $pendingDest ?: $this->resolvePostAuthDestination($redirect);
             header('Location: ' . (defined('APP_URL') ? APP_URL : '') . $destination);
             exit;
         } catch (\Exception $e) {
@@ -1684,6 +1730,159 @@ class StoreController {
     public function sitemapXml(): void {
         header('Content-Type: application/xml; charset=utf-8');
         echo \ShopCMS\Core\SeoHelper::buildSitemapXml();
+        exit;
+    }
+
+    public function forgotPasswordForm(): void {
+        if (\ShopCMS\Core\Auth::isCustomer()) {
+            header('Location: ' . (defined('APP_URL') ? APP_URL : '') . '/account');
+            exit;
+        }
+        StorefrontExperience::ensurePasswordResetsTable();
+        $notice = $_SESSION['forgot_notice'] ?? null;
+        $error = $_SESSION['forgot_error'] ?? null;
+        $devResetLink = $_SESSION['forgot_dev_link'] ?? null;
+        unset($_SESSION['forgot_notice'], $_SESSION['forgot_error'], $_SESSION['forgot_dev_link']);
+
+        ThemeManager::render('forgot_password', [
+            'notice' => $notice,
+            'error' => $error,
+            'devResetLink' => $devResetLink,
+            'currency' => $this->getCurrency(),
+        ]);
+    }
+
+    public function forgotPasswordSubmit(): void {
+        StorefrontExperience::ensurePasswordResetsTable();
+        $baseUrl = defined('APP_URL') ? rtrim((string)APP_URL, '/') : '';
+        $email = strtolower(trim((string)($_POST['email'] ?? '')));
+
+        if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            $_SESSION['forgot_error'] = 'Ingresa un correo electrónico válido.';
+            header('Location: ' . $baseUrl . '/forgot-password');
+            exit;
+        }
+
+        $user = Database::fetch(
+            "SELECT id, name, email, is_active FROM " . Database::table('users') . " WHERE LOWER(email) = ? LIMIT 1",
+            [$email]
+        );
+
+        if ($user && (!isset($user['is_active']) || (int)$user['is_active'] === 1)) {
+            $token = bin2hex(random_bytes(32));
+            $tokenHash = hash('sha256', $token);
+            $expiresAt = date('Y-m-d H:i:s', time() + 1800);
+
+            $resetTable = Database::table('password_resets');
+            Database::query("DELETE FROM {$resetTable} WHERE LOWER(email) = ?", [$email]);
+            Database::insert('password_resets', [
+                'email' => $email,
+                'token_hash' => $tokenHash,
+                'expires_at' => $expiresAt,
+            ]);
+
+            $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+            $host = $_SERVER['HTTP_HOST'] ?? 'localhost';
+            $resetPath = $baseUrl . '/reset-password?token=' . urlencode($token);
+            $fullUrl = str_starts_with($resetPath, 'http') ? $resetPath : ($scheme . '://' . $host . $resetPath);
+
+            $storeTitle = Settings::get('store_name', 'ShopCMS');
+            $mailSent = @mail(
+                $user['email'],
+                "Restablecer contraseña - {$storeTitle}",
+                "Hola {$user['name']},\n\nSolicitaste restablecer tu contraseña. Usa el siguiente enlace (válido por 30 minutos):\n{$fullUrl}\n\nSi no solicitaste este cambio, ignora este mensaje."
+            );
+
+            $isLocalDev = (defined('APP_ENV') && APP_ENV === 'development')
+                || str_contains(strtolower((string)$host), 'localhost')
+                || str_contains((string)$host, '127.0.0.1');
+            if (!$mailSent || $isLocalDev) {
+                $_SESSION['forgot_dev_link'] = $resetPath;
+            }
+        }
+
+        $_SESSION['forgot_notice'] = 'Si el correo está registrado y activo, hemos preparado un enlace seguro para restablecer tu contraseña (válido por 30 minutos).';
+        header('Location: ' . $baseUrl . '/forgot-password');
+        exit;
+    }
+
+    public function resetPasswordForm(): void {
+        StorefrontExperience::ensurePasswordResetsTable();
+        $token = trim((string)($_GET['token'] ?? ''));
+        $error = $_SESSION['reset_error'] ?? null;
+        unset($_SESSION['reset_error']);
+
+        $tokenValid = false;
+        if ($token !== '') {
+            $tokenHash = hash('sha256', $token);
+            $row = Database::fetch(
+                "SELECT id FROM " . Database::table('password_resets') . " WHERE token_hash = ? AND used_at IS NULL AND expires_at > NOW() LIMIT 1",
+                [$tokenHash]
+            );
+            $tokenValid = !empty($row);
+        }
+
+        if (!$tokenValid && $error === null) {
+            $error = 'El enlace de recuperación es inválido o ya expiró.';
+        }
+
+        ThemeManager::render('reset_password', [
+            'token' => $token,
+            'tokenValid' => $tokenValid,
+            'error' => $error,
+            'currency' => $this->getCurrency(),
+        ]);
+    }
+
+    public function resetPasswordSubmit(): void {
+        StorefrontExperience::ensurePasswordResetsTable();
+        $baseUrl = defined('APP_URL') ? rtrim((string)APP_URL, '/') : '';
+        $token = trim((string)($_POST['token'] ?? ''));
+        $password = (string)($_POST['password'] ?? '');
+        $confirm = (string)($_POST['password_confirm'] ?? '');
+
+        if ($token === '') {
+            $_SESSION['reset_error'] = 'Token de recuperación inválido.';
+            header('Location: ' . $baseUrl . '/reset-password');
+            exit;
+        }
+
+        $tokenHash = hash('sha256', $token);
+        $resetRow = Database::fetch(
+            "SELECT * FROM " . Database::table('password_resets') . " WHERE token_hash = ? AND used_at IS NULL AND expires_at > NOW() LIMIT 1",
+            [$tokenHash]
+        );
+        if (!$resetRow) {
+            $_SESSION['reset_error'] = 'El enlace de recuperación es inválido o ha expirado.';
+            header('Location: ' . $baseUrl . '/reset-password?token=' . urlencode($token));
+            exit;
+        }
+
+        $strengthErr = $this->validatePasswordStrength($password);
+        if ($strengthErr !== null) {
+            $_SESSION['reset_error'] = $strengthErr;
+            header('Location: ' . $baseUrl . '/reset-password?token=' . urlencode($token));
+            exit;
+        }
+        if ($password !== $confirm) {
+            $_SESSION['reset_error'] = 'Las contraseñas no coinciden. Verifica ambos campos.';
+            header('Location: ' . $baseUrl . '/reset-password?token=' . urlencode($token));
+            exit;
+        }
+
+        $hashed = password_hash($password, PASSWORD_DEFAULT);
+        Database::query(
+            "UPDATE " . Database::table('users') . " SET password = ? WHERE LOWER(email) = ?",
+            [$hashed, strtolower((string)$resetRow['email'])]
+        );
+        Database::query(
+            "UPDATE " . Database::table('password_resets') . " SET used_at = NOW() WHERE id = ?",
+            [(int)$resetRow['id']]
+        );
+        \ShopCMS\Core\Security::clearLoginAttempts('customer', (string)$resetRow['email']);
+
+        $_SESSION['checkout_notice'] = 'Tu contraseña se actualizó correctamente. Ya puedes iniciar sesión.';
+        header('Location: ' . $baseUrl . '/login');
         exit;
     }
 

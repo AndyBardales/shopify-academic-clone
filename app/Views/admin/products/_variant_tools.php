@@ -37,7 +37,10 @@ $defaultOpt2Preview = htmlspecialchars($product['option2_name'] ?? ($defaultOpt2
                 <span id="scms_bulk_file_label">Foto compartida</span>
                 <input type="file" id="scms_bulk_file_input" accept=".webp,.jpg,.jpeg,.png,image/webp,image/jpeg,image/png" style="display: none;" onchange="scmsOnBulkFilePicked(this)">
             </label>
-            <input type="text" id="scms_bulk_specs" class="form-control" placeholder="Ficha ej: Material: Lino (opcional)" style="font-size: 12px; padding: 6px 9px; flex: 1; min-width: 140px; background: #FFF;">
+            <select id="scms_bulk_existing_url" onfocus="scmsRefreshExistingGalleryChoices()" class="form-control" style="font-size: 11.5px; padding: 6px 8px; max-width: 170px; background: #FFF;">
+                <option value="">O usar foto ya subida...</option>
+            </select>
+            <input type="text" id="scms_bulk_specs" class="form-control" placeholder="Ficha ej: Material: Lino (opcional)" style="font-size: 12px; padding: 6px 9px; flex: 1; min-width: 130px; background: #FFF;">
             <button type="button" class="btn btn-primary btn-sm" onclick="scmsApplyBulkVariantAttr()" style="white-space: nowrap; font-size: 12px;">Aplicar a coincidentes</button>
         </div>
     </div>
@@ -169,6 +172,110 @@ $defaultOpt2Preview = htmlspecialchars($product['option2_name'] ?? ($defaultOpt2
         if (lbl) lbl.textContent = f.name.length > 18 ? (f.name.slice(0, 15) + '...') : f.name;
     };
 
+    window.scmsRefreshExistingGalleryChoices = function() {
+        var sel = document.getElementById('scms_bulk_existing_url');
+        if (!sel) return;
+        var currentVal = sel.value || '';
+        var seen = {};
+        var options = '<option value="">O usar foto ya subida...</option>';
+        function addChoice(rawPath, labelPrefix) {
+            rawPath = String(rawPath || '').trim();
+            if (!rawPath || seen[rawPath]) return;
+            seen[rawPath] = true;
+            var shortName = rawPath.split('/').pop() || rawPath;
+            if (shortName.length > 28) shortName = shortName.slice(0, 25) + '...';
+            options += '<option value="' + rawPath.replace(/"/g, '&quot;') + '">' + labelPrefix + shortName.replace(/</g, '&lt;') + '</option>';
+        }
+        var mainInp = document.getElementById('existing_featured_image') || document.getElementById('featured_image_url');
+        if (mainInp && mainInp.value) addChoice(mainInp.value, 'Principal: ');
+        document.querySelectorAll('input[name="variant_existing_image[]"]').forEach(function(inp) {
+            if (inp.value) addChoice(inp.value, 'Variante: ');
+        });
+        document.querySelectorAll('input[name="gallery_urls[]"]').forEach(function(inp) {
+            if (inp.value) addChoice(inp.value, 'Galería URL: ');
+        });
+        <?php if (!empty($galleryImages) && is_array($galleryImages)): ?>
+            <?php foreach ($galleryImages as $gi): ?>
+                addChoice(<?= json_encode((string)($gi['image_url'] ?? '')) ?>, 'Galería: ');
+            <?php endforeach; ?>
+        <?php endif; ?>
+        sel.innerHTML = options;
+        if (currentVal && seen[currentVal]) sel.value = currentVal;
+    };
+
+    window.getMissingBaseFields = function() {
+        var checks = [
+            { id: 'name', label: 'Nombre del producto', check: function(v) { return v.trim() !== ''; } },
+            { id: 'short_description', label: 'Descripción corta', check: function(v) { return v.trim() !== ''; } },
+            { id: 'description', label: 'Descripción completa', check: function(v) { return v.trim() !== ''; } },
+            { id: 'price', label: 'Precio de venta (mayor a 0)', check: function(v) { return v.trim() !== '' && parseFloat(v) > 0; } },
+            { id: 'sku', label: 'SKU base', check: function(v) { return v.trim() !== ''; } },
+            { id: 'quantity', label: 'Cantidad disponible', check: function(v) { return v.trim() !== '' && !isNaN(parseInt(v, 10)); } },
+            { id: 'category_id', label: 'Categoría', check: function(v) { return v.trim() !== ''; } }
+        ];
+        var generalCard = document.getElementById('general_pricing_inventory_card');
+        var cardHidden = !!(generalCard && generalCard.style.display === 'none');
+        var missing = [];
+        checks.forEach(function(c) {
+            if (cardHidden && (c.id === 'price' || c.id === 'quantity')) {
+                return;
+            }
+            var el = document.getElementById(c.id);
+            var ok = el ? c.check(el.value || '') : false;
+            if (el) {
+                el.style.borderColor = ok ? '' : '#DC2626';
+                if (!ok && !el.dataset.valListener) {
+                    el.dataset.valListener = '1';
+                    el.addEventListener('input', function() { el.style.borderColor = ''; });
+                    el.addEventListener('change', function() { el.style.borderColor = ''; });
+                }
+            }
+            if (!ok) missing.push({ id: c.id, label: c.label, el: el });
+        });
+        return missing;
+    };
+
+    window.showBaseValidationMessage = function(missing) {
+        var box = document.getElementById('base-product-validation-alert');
+        if (!box) return;
+        if (!missing.length) {
+            box.style.display = 'none';
+            box.innerHTML = '';
+            return;
+        }
+        box.innerHTML = '<strong>Completa todos los datos del producto base antes de guardar variantes:</strong> '
+            + missing.map(function(m) { return m.label; }).join(', ') + '.';
+        box.style.display = 'block';
+        box.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        if (missing[0] && missing[0].el) {
+            setTimeout(function() { missing[0].el.focus(); }, 200);
+        }
+    };
+
+    window.validateProductBeforeSubmit = function() {
+        var hasVar = document.getElementById('has_variants');
+        if (hasVar && hasVar.checked) {
+            var missing = window.getMissingBaseFields();
+            if (missing.length > 0) {
+                window.showBaseValidationMessage(missing);
+                return false;
+            }
+            var titles = Array.from(document.querySelectorAll('input[name="variant_title[]"]'))
+                .map(function(i) { return (i.value || '').trim(); })
+                .filter(Boolean);
+            if (titles.length === 0) {
+                var box = document.getElementById('base-product-validation-alert');
+                if (box) {
+                    box.innerHTML = '<strong>Falta al menos una variante:</strong> ingresa la combinación de opciones (ej. Negro / M) o desactiva las variantes.';
+                    box.style.display = 'block';
+                    box.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }
+                return false;
+            }
+        }
+        return true;
+    };
+
     window.scmsApplyBulkVariantAttr = function() {
         var targetAttr = (document.getElementById('scms_bulk_match').value || '').trim().toLowerCase();
         var feedback = document.getElementById('scms_bulk_feedback');
@@ -179,6 +286,7 @@ $defaultOpt2Preview = htmlspecialchars($product['option2_name'] ?? ($defaultOpt2
         var newPrice = (document.getElementById('scms_bulk_price').value || '').trim();
         var newCompare = (document.getElementById('scms_bulk_compare').value || '').trim();
         var newSpecs = (document.getElementById('scms_bulk_specs').value || '').trim();
+        var existingChoice = (document.getElementById('scms_bulk_existing_url') ? document.getElementById('scms_bulk_existing_url').value : '').trim();
 
         var bulkRef = '';
         var previewDataUrl = '';
@@ -201,6 +309,8 @@ $defaultOpt2Preview = htmlspecialchars($product['option2_name'] ?? ($defaultOpt2
                 bucket.appendChild(fileInp);
             }
             previewDataUrl = URL.createObjectURL(pendingBulkFile);
+        } else if (existingChoice !== '') {
+            previewDataUrl = (/^https?:\/\//i.test(existingChoice) || existingChoice.indexOf('/') === 0) ? existingChoice : ('/' + existingChoice.replace(/^\/+/, ''));
         }
 
         var matchedCount = 0;
@@ -225,13 +335,19 @@ $defaultOpt2Preview = htmlspecialchars($product['option2_name'] ?? ($defaultOpt2
                     updateRowDetailDot(row);
                 }
             }
-            if (bulkRef !== '') {
+            if (bulkRef !== '' || existingChoice !== '') {
                 var refInp = row.querySelector('input[name="variant_bulk_ref[]"]');
+                var exInp = row.querySelector('input[name="variant_existing_image[]"]');
                 var clrInp = row.querySelector('input[name="variant_clear_image[]"]');
                 var thumb = row.querySelector('.scms-var-thumb');
                 var clrBtn = row.querySelector('.scms-var-clear');
                 var pickLbl = row.querySelector('.scms-var-pick-label');
-                if (refInp) refInp.value = bulkRef;
+                if (bulkRef !== '') {
+                    if (refInp) refInp.value = bulkRef;
+                } else if (existingChoice !== '') {
+                    if (refInp) refInp.value = '';
+                    if (exInp) exInp.value = existingChoice;
+                }
                 if (clrInp) clrInp.value = '0';
                 if (thumb && previewDataUrl) thumb.innerHTML = '<img src="' + previewDataUrl + '" alt="Variante" style="width:100%;height:100%;object-fit:cover;">';
                 if (clrBtn) clrBtn.style.display = 'inline-flex';

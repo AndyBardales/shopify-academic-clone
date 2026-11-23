@@ -282,7 +282,7 @@ class ThemeManager {
         }
         require $headerFile;
         echo Security::csrfMetaTag() . PHP_EOL;
-        echo '<link rel="stylesheet" href="' . $baseUrl . '/assets/css/shopcms-guard.css?v=20261123d">' . PHP_EOL;
+        echo '<link rel="stylesheet" href="' . $baseUrl . '/assets/css/shopcms-guard.css?v=20261123e">' . PHP_EOL;
         echo ThemeCustomizer::renderGlobalStyleTag($theme) . PHP_EOL;
 
         if (Settings::getBool('maintenance_mode', false) && Auth::isAdmin() && !ThemeCustomizer::isEditorPreview()) {
@@ -339,7 +339,7 @@ class ThemeManager {
             echo StorefrontExperience::renderProductSideBasket($baseUrl) . PHP_EOL;
         }
 
-        echo '<script src="' . $baseUrl . '/assets/js/shopcms-guard.js?v=20261123d"></script>' . PHP_EOL;
+        echo '<script src="' . $baseUrl . '/assets/js/shopcms-guard.js?v=20261123e"></script>' . PHP_EOL;
         echo ThemeCustomizer::renderEditorBridgeScript($theme) . PHP_EOL;
         require $footerFile;
     }

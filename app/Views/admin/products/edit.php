@@ -35,7 +35,7 @@
     </div>
 </div>
 
-<form id="product-edit-form" method="POST" action="<?= $baseUrl ?>/admin/products/update/<?= $product['id'] ?>" enctype="multipart/form-data">
+<form id="product-edit-form" method="POST" action="<?= $baseUrl ?>/admin/products/update/<?= $product['id'] ?>" enctype="multipart/form-data" onsubmit="return validateProductBeforeSubmit();">
     <div id="base-product-validation-alert" style="display: none; background: #FEF2F2; border: 1px solid #FCA5A5; color: #991B1B; border-radius: 10px; padding: 14px 18px; margin-bottom: 18px; font-size: 13.5px; line-height: 1.5;"></div>
     <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 20px;">
         <!-- COLUMNA PRINCIPAL -->

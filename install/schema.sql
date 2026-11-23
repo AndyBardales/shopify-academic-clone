@@ -117,6 +117,18 @@ CREATE TABLE IF NOT EXISTS `{prefix}product_images` (
     FOREIGN KEY (`product_id`) REFERENCES `{prefix}products`(`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- 9b. Tokens de Recuperación de Contraseña
+CREATE TABLE IF NOT EXISTS `{prefix}password_resets` (
+    `id` INT AUTO_INCREMENT PRIMARY KEY,
+    `email` VARCHAR(150) NOT NULL,
+    `token_hash` VARCHAR(64) NOT NULL,
+    `expires_at` DATETIME NOT NULL,
+    `used_at` DATETIME NULL,
+    `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+    INDEX `idx_reset_token_hash` (`token_hash`),
+    INDEX `idx_reset_email` (`email`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- 10. Pedidos
 CREATE TABLE IF NOT EXISTS `{prefix}orders` (
     `id` INT AUTO_INCREMENT PRIMARY KEY,
