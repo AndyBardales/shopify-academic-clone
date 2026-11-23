@@ -25,6 +25,7 @@ class Router {
 
         // Buscar coincidencia exacta
         if (isset(self::$routes[$method][$route])) {
+            Security::enforcePostCsrf($route);
             self::callHandler(self::$routes[$method][$route]);
             return;
         }
@@ -36,6 +37,7 @@ class Router {
 
             if (preg_match($regex, $route, $matches)) {
                 $params = array_filter($matches, 'is_string', ARRAY_FILTER_USE_KEY);
+                Security::enforcePostCsrf($route);
                 self::callHandler($handler, $params);
                 return;
             }

@@ -9,6 +9,7 @@ use ShopCMS\Core\OrderWorkflow;
 use ShopCMS\Core\InventoryManager;
 use ShopCMS\Core\Settings;
 use ShopCMS\Core\ThemeCustomizer;
+use ShopCMS\Core\Security;
 use Exception;
 
 class AdminController {
@@ -39,21 +40,53 @@ class AdminController {
             exit;
         }
         $error = $_SESSION['flash_error'] ?? null;
-        unset($_SESSION['flash_error']);
+        $lockoutSeconds = (int)($_SESSION['admin_lockout_seconds'] ?? 0);
+        unset($_SESSION['flash_error'], $_SESSION['admin_lockout_seconds']);
+
+        if ($lockoutSeconds <= 0) {
+            $lastEmail = (string)($_SESSION['admin_last_attempt_email'] ?? '');
+            $lock = Security::checkLoginLockout('admin', $lastEmail);
+            if ($lock['locked']) {
+                $lockoutSeconds = $lock['remaining_seconds'];
+                $error = 'Demasiados intentos fallidos. Acceso bloqueado temporalmente por seguridad. Intenta nuevamente en ' . Security::formatWaitTime($lockoutSeconds) . '.';
+            }
+        }
         require dirname(__DIR__) . '/Views/admin/login.php';
     }
 
     public function loginSubmit(): void {
         $email = trim($_POST['email'] ?? '');
         $password = $_POST['password'] ?? '';
+        $_SESSION['admin_last_attempt_email'] = $email;
+
+        $lock = Security::checkLoginLockout('admin', $email);
+        if ($lock['locked']) {
+            http_response_code(429);
+            $_SESSION['admin_lockout_seconds'] = $lock['remaining_seconds'];
+            $_SESSION['flash_error'] = 'Demasiados intentos fallidos. Acceso bloqueado temporalmente. Espera ' . Security::formatWaitTime($lock['remaining_seconds']) . ' antes de volver a intentarlo.';
+            session_write_close();
+            header('Location: ' . (defined('APP_URL') ? APP_URL : '') . '/admin/login');
+            exit;
+        }
 
         if (Auth::attempt($email, $password)) {
+            Security::clearLoginAttempts('admin', $email);
+            unset($_SESSION['admin_last_attempt_email'], $_SESSION['admin_lockout_seconds']);
+            @session_regenerate_id(true);
             session_write_close();
             header('Location: ' . (defined('APP_URL') ? APP_URL : '') . '/admin');
             exit;
         }
 
-        $_SESSION['flash_error'] = 'Credenciales incorrectas. Verifica tu correo y contraseña.';
+        $res = Security::recordFailedLogin('admin', $email);
+        if ($res['locked']) {
+            http_response_code(429);
+            $_SESSION['admin_lockout_seconds'] = $res['remaining_seconds'];
+            $_SESSION['flash_error'] = 'Alcanzaste el máximo de ' . Security::MAX_ACCOUNT_ATTEMPTS . ' intentos fallidos. Inicio de sesión bloqueado durante ' . Security::formatWaitTime($res['remaining_seconds']) . '.';
+        } else {
+            $rem = $res['remaining_attempts'];
+            $_SESSION['flash_error'] = 'Credenciales incorrectas. Te ' . ($rem === 1 ? 'queda 1 intento' : "quedan {$rem} intentos") . ' antes del bloqueo temporal.';
+        }
         session_write_close();
         header('Location: ' . (defined('APP_URL') ? APP_URL : '') . '/admin/login');
         exit;

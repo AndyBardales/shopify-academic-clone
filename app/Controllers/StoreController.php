@@ -796,11 +796,22 @@ class StoreController {
 
         $error = $_SESSION['auth_error'] ?? null;
         $notice = $this->resolveAuthNotice($_SESSION['checkout_notice'] ?? null);
-        unset($_SESSION['auth_error'], $_SESSION['checkout_notice']);
+        $lockoutSeconds = (int)($_SESSION['customer_lockout_seconds'] ?? 0);
+        unset($_SESSION['auth_error'], $_SESSION['checkout_notice'], $_SESSION['customer_lockout_seconds']);
+
+        if ($lockoutSeconds <= 0) {
+            $lastEmail = (string)($_SESSION['customer_last_attempt_email'] ?? '');
+            $lock = \ShopCMS\Core\Security::checkLoginLockout('customer', $lastEmail);
+            if ($lock['locked']) {
+                $lockoutSeconds = $lock['remaining_seconds'];
+                $error = 'Demasiados intentos fallidos. Acceso bloqueado temporalmente por seguridad. Intenta nuevamente en ' . \ShopCMS\Core\Security::formatWaitTime($lockoutSeconds) . '.';
+            }
+        }
 
         ThemeManager::render('login', [
             'error' => $error,
             'notice' => $notice,
+            'lockoutSeconds' => $lockoutSeconds,
             'redirect' => $_GET['redirect'] ?? '',
             'currency' => $this->getCurrency()
         ]);
@@ -810,8 +821,23 @@ class StoreController {
         $email = trim($_POST['email'] ?? '');
         $password = $_POST['password'] ?? '';
         $redirect = trim($_POST['redirect'] ?? '');
+        $redirQuery = $redirect ? '?redirect=' . urlencode($redirect) : '';
+        $_SESSION['customer_last_attempt_email'] = $email;
+
+        $lock = \ShopCMS\Core\Security::checkLoginLockout('customer', $email);
+        if ($lock['locked']) {
+            http_response_code(429);
+            $_SESSION['customer_lockout_seconds'] = $lock['remaining_seconds'];
+            $_SESSION['auth_error'] = 'Demasiados intentos fallidos. Cuenta bloqueada temporalmente. Espera ' . \ShopCMS\Core\Security::formatWaitTime($lock['remaining_seconds']) . ' antes de volver a intentarlo.';
+            session_write_close();
+            header('Location: ' . (defined('APP_URL') ? APP_URL : '') . '/login' . $redirQuery);
+            exit;
+        }
 
         if (\ShopCMS\Core\Auth::customerLogin($email, $password)) {
+            \ShopCMS\Core\Security::clearLoginAttempts('customer', $email);
+            unset($_SESSION['customer_last_attempt_email'], $_SESSION['customer_lockout_seconds']);
+            @session_regenerate_id(true);
             session_write_close();
             $destination = $this->resolvePostAuthDestination($redirect);
             header('Location: ' . (defined('APP_URL') ? APP_URL : '') . $destination);
@@ -819,10 +845,17 @@ class StoreController {
         }
 
         if (empty($_SESSION['auth_error'])) {
-            $_SESSION['auth_error'] = "Credenciales incorrectas. Verifica tu correo y contraseña.";
+            $res = \ShopCMS\Core\Security::recordFailedLogin('customer', $email);
+            if ($res['locked']) {
+                http_response_code(429);
+                $_SESSION['customer_lockout_seconds'] = $res['remaining_seconds'];
+                $_SESSION['auth_error'] = 'Alcanzaste el máximo de ' . \ShopCMS\Core\Security::MAX_ACCOUNT_ATTEMPTS . ' intentos fallidos. Inicio de sesión bloqueado durante ' . \ShopCMS\Core\Security::formatWaitTime($res['remaining_seconds']) . '.';
+            } else {
+                $rem = $res['remaining_attempts'];
+                $_SESSION['auth_error'] = 'Credenciales incorrectas. Te ' . ($rem === 1 ? 'queda 1 intento' : "quedan {$rem} intentos") . ' antes del bloqueo temporal.';
+            }
         }
         session_write_close();
-        $redirQuery = $redirect ? '?redirect=' . urlencode($redirect) : '';
         header('Location: ' . (defined('APP_URL') ? APP_URL : '') . '/login' . $redirQuery);
         exit;
     }

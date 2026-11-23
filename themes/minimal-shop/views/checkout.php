@@ -21,6 +21,7 @@ $total = $total ?? 0;
     <?php endif; ?>
 
     <form method="POST" action="<?= $baseUrl ?>/checkout/process">
+        <?= \ShopCMS\Core\Security::csrfField() ?>
         <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 36px;">
             <!-- DATOS DEL CLIENTE Y ENVÍO -->
             <div>

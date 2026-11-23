@@ -39,6 +39,7 @@
         <?php endif; ?>
 
         <form id="register-form" method="POST" action="<?= $baseUrl ?>/register" onsubmit="return validateRegisterPassword();">
+            <?= \ShopCMS\Core\Security::csrfField() ?>
             <input type="hidden" name="redirect" value="<?= htmlspecialchars($redirect ?? '') ?>">
 
             <div style="margin-bottom: 16px;">

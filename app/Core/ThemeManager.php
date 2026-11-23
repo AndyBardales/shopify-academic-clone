@@ -277,6 +277,7 @@ class ThemeManager {
             $headerFile = dirname(__DIR__, 2) . '/themes/minimal-shop/views/header.php';
         }
         require $headerFile;
+        echo Security::csrfMetaTag() . PHP_EOL;
         echo '<link rel="stylesheet" href="' . $baseUrl . '/assets/css/shopcms-guard.css?v=20261122b">' . PHP_EOL;
         echo ThemeCustomizer::renderGlobalStyleTag($theme) . PHP_EOL;
 
@@ -330,7 +331,7 @@ class ThemeManager {
             }
         }
 
-        echo '<script src="' . $baseUrl . '/assets/js/shopcms-guard.js?v=20261122b"></script>' . PHP_EOL;
+        echo '<script src="' . $baseUrl . '/assets/js/shopcms-guard.js?v=20261123a"></script>' . PHP_EOL;
         echo ThemeCustomizer::renderEditorBridgeScript($theme) . PHP_EOL;
         require $footerFile;
     }

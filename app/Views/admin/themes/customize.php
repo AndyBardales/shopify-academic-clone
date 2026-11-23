@@ -10,6 +10,7 @@ $previewProductPath = !empty($sampleProductSlug) ? '/product/' . $sampleProductS
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <?= \ShopCMS\Core\Security::csrfMetaTag() ?>
     <title>Editor Visual: <?= htmlspecialchars($themeName) ?> — ShopCMS Studio</title>
     <style>
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -485,6 +486,7 @@ $previewProductPath = !empty($sampleProductSlug) ? '/product/' . $sampleProductS
 
 <script>
 const BASE_URL = <?= json_encode($baseUrl) ?>;
+const CSRF_TOKEN = <?= json_encode(\ShopCMS\Core\Security::csrfToken()) ?>;
 const THEME_SLUG = <?= json_encode($slug) ?>;
 const SAMPLE_PRODUCT_PATH = <?= json_encode($previewProductPath) ?>;
 const BLOCK_TYPES = <?= json_encode($blockTypes, JSON_UNESCAPED_UNICODE) ?>;
@@ -1028,6 +1030,7 @@ function makeImageUploadCtrl(label, currentVal, onChange, reloadIframeOnUpload) 
         try {
             const res = await fetch(BASE_URL + '/admin/themes/customize/' + encodeURIComponent(THEME_SLUG) + '/upload-asset', {
                 method: 'POST',
+                headers: { 'X-CSRF-Token': CSRF_TOKEN },
                 body: fd
             });
             const data = await res.json();
@@ -1319,7 +1322,7 @@ async function saveThemeConfig() {
     try {
         const res = await fetch(BASE_URL + '/admin/themes/customize/' + encodeURIComponent(THEME_SLUG) + '/save', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': CSRF_TOKEN },
             body: JSON.stringify(themeConfig)
         });
         const data = await res.json();
@@ -1340,7 +1343,8 @@ async function resetThemeConfig() {
     if (!confirm('¿Restablecer los colores, textos y secciones de esta plantilla a su diseño original?')) return;
     try {
         const res = await fetch(BASE_URL + '/admin/themes/customize/' + encodeURIComponent(THEME_SLUG) + '/reset', {
-            method: 'POST'
+            method: 'POST',
+            headers: { 'X-CSRF-Token': CSRF_TOKEN }
         });
         const data = await res.json();
         if (!res.ok || !data.ok) throw new Error(data.error || 'No se pudo restablecer');

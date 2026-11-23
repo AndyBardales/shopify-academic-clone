@@ -6,6 +6,7 @@ $baseUrl = defined('APP_URL') ? APP_URL : '';
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <?= \ShopCMS\Core\Security::csrfMetaTag() ?>
     <title><?= htmlspecialchars($pageTitle ?? 'Panel de Control') ?> — <?= htmlspecialchars($storeName) ?></title>
     <link rel="stylesheet" href="<?= $baseUrl ?>/assets/css/polaris.css">
     <link rel="stylesheet" href="<?= $baseUrl ?>/assets/css/shopcms-guard.css?v=20261122b">
@@ -425,7 +426,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 });
 </script>
-<script src="<?= $baseUrl ?>/assets/js/shopcms-guard.js?v=20261122b"></script>
+<script src="<?= $baseUrl ?>/assets/js/shopcms-guard.js?v=20261123a"></script>
 </body>
 </html>
 

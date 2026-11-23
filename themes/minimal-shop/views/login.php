@@ -32,11 +32,12 @@
                     <line x1="12" y1="8" x2="12" y2="12"></line>
                     <line x1="12" y1="16" x2="12.01" y2="16"></line>
                 </svg>
-                <span><?= htmlspecialchars($error) ?></span>
+                <span><?= htmlspecialchars($error) ?><?php if (!empty($lockoutSeconds) && $lockoutSeconds > 0): ?> (<strong id="customer-lockout-timer"><?= \ShopCMS\Core\Security::formatWaitTime((int)$lockoutSeconds) ?></strong>)<?php endif; ?></span>
             </div>
         <?php endif; ?>
 
-        <form method="POST" action="<?= $baseUrl ?>/login">
+        <form method="POST" action="<?= $baseUrl ?>/login" id="customer-login-form">
+            <?= \ShopCMS\Core\Security::csrfField() ?>
             <input type="hidden" name="redirect" value="<?= htmlspecialchars($redirect ?? '') ?>">
 
             <div style="margin-bottom: 18px;">
@@ -55,12 +56,31 @@
                 </div>
             </div>
 
-            <button type="submit" class="btn-store btn-store-primary" style="width: 100%; padding: 12px; font-size: 14px; font-weight: 600;">
-                Ingresar a Mi Cuenta
+            <button type="submit" id="customer-login-submit-btn" class="btn-store btn-store-primary" style="width: 100%; padding: 12px; font-size: 14px; font-weight: 600;" <?= !empty($lockoutSeconds) && $lockoutSeconds > 0 ? 'disabled' : '' ?>>
+                <?= !empty($lockoutSeconds) && $lockoutSeconds > 0 ? 'Acceso Bloqueado Temporalmente' : 'Ingresar a Mi Cuenta' ?>
             </button>
         </form>
 
         <script>
+        (function() {
+            var rem = <?= (int)($lockoutSeconds ?? 0) ?>;
+            if (rem > 0) {
+                var tEl = document.getElementById('customer-lockout-timer');
+                var btn = document.getElementById('customer-login-submit-btn');
+                document.querySelectorAll('#customer-login-form input').forEach(function(el) { el.disabled = true; });
+                var iv = setInterval(function() {
+                    rem = Math.max(0, rem - 1);
+                    var m = String(Math.floor(rem / 60)).padStart(2, '0');
+                    var s = String(rem % 60).padStart(2, '0');
+                    if (tEl) tEl.textContent = m + ':' + s;
+                    if (rem <= 0) {
+                        clearInterval(iv);
+                        document.querySelectorAll('#customer-login-form input, #customer-login-form button').forEach(function(el) { el.disabled = false; });
+                        if (btn) btn.textContent = 'Ingresar a Mi Cuenta';
+                    }
+                }, 1000);
+            }
+        })();
         function toggleLoginPass(btn) {
             var inp = document.getElementById('login-password');
             if (!inp) return;

@@ -6,6 +6,7 @@ $baseUrl = defined('APP_URL') ? APP_URL : '';
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <?= \ShopCMS\Core\Security::csrfMetaTag() ?>
     <title>Iniciar Sesión — ShopCMS Polaris</title>
     <link rel="stylesheet" href="<?= $baseUrl ?>/assets/css/polaris.css">
     <style>
@@ -65,34 +66,53 @@ $baseUrl = defined('APP_URL') ? APP_URL : '';
     </div>
 
     <?php if (!empty($error)): ?>
-        <div class="alert-message error" style="margin-bottom: 16px; background: #FEF2F2; color: #991B1B; border: 1px solid #F87171; padding: 10px 14px; border-radius: 8px; font-size: 13px; font-weight: 500; display: flex; align-items: center; gap: 8px;">
+        <div id="admin-login-alert" class="alert-message error" style="margin-bottom: 16px; background: #FEF2F2; color: #991B1B; border: 1px solid #F87171; padding: 10px 14px; border-radius: 8px; font-size: 13px; font-weight: 500; display: flex; align-items: center; gap: 8px;">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#DC2626" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;">
                 <circle cx="12" cy="12" r="10"></circle>
                 <line x1="12" y1="8" x2="12" y2="12"></line>
                 <line x1="12" y1="16" x2="12.01" y2="16"></line>
             </svg>
-            <span><?= htmlspecialchars($error) ?></span>
+            <span><?= htmlspecialchars($error) ?><?php if (!empty($lockoutSeconds) && $lockoutSeconds > 0): ?> (<strong id="lockout-timer"><?= \ShopCMS\Core\Security::formatWaitTime((int)$lockoutSeconds) ?></strong>)<?php endif; ?></span>
         </div>
     <?php endif; ?>
 
     <form method="POST" action="<?= $baseUrl ?>/admin/login" id="admin-login-form">
+        <?= \ShopCMS\Core\Security::csrfField() ?>
         <div class="form-group">
             <label for="email">Correo electrónico</label>
-            <input type="email" id="email" name="email" class="form-control" placeholder="admin@ejemplo.com" required autofocus autocomplete="username">
+            <input type="email" id="email" name="email" class="form-control" placeholder="admin@ejemplo.com" required autofocus autocomplete="username" <?= !empty($lockoutSeconds) && $lockoutSeconds > 0 ? 'disabled' : '' ?>>
         </div>
 
         <div class="form-group">
             <label for="password">Contraseña</label>
-            <input type="password" id="password" name="password" class="form-control" placeholder="••••••••" required autocomplete="current-password">
+            <input type="password" id="password" name="password" class="form-control" placeholder="••••••••" required autocomplete="current-password" <?= !empty($lockoutSeconds) && $lockoutSeconds > 0 ? 'disabled' : '' ?>>
         </div>
 
-        <button type="submit" id="login-submit-btn" class="btn btn-primary" style="width: 100%; margin-top: 14px; padding: 10px; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 6px;">
-            <span>Iniciar Sesión</span>
+        <button type="submit" id="login-submit-btn" class="btn btn-primary" style="width: 100%; margin-top: 14px; padding: 10px; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 6px;" <?= !empty($lockoutSeconds) && $lockoutSeconds > 0 ? 'disabled' : '' ?>>
+            <span><?= !empty($lockoutSeconds) && $lockoutSeconds > 0 ? 'Acceso Bloqueado Temporalmente' : 'Iniciar Sesión' ?></span>
         </button>
     </form>
 </div>
 
 <script>
+(function() {
+    var rem = <?= (int)($lockoutSeconds ?? 0) ?>;
+    if (rem > 0) {
+        var timerEl = document.getElementById('lockout-timer');
+        var btn = document.getElementById('login-submit-btn');
+        var iv = setInterval(function() {
+            rem = Math.max(0, rem - 1);
+            var m = String(Math.floor(rem / 60)).padStart(2, '0');
+            var s = String(rem % 60).padStart(2, '0');
+            if (timerEl) timerEl.textContent = m + ':' + s;
+            if (rem <= 0) {
+                clearInterval(iv);
+                document.querySelectorAll('#admin-login-form input, #admin-login-form button').forEach(function(el) { el.disabled = false; });
+                if (btn) btn.innerHTML = '<span>Iniciar Sesión</span>';
+            }
+        }, 1000);
+    }
+})();
 document.getElementById('admin-login-form').addEventListener('submit', function(e) {
     const btn = document.getElementById('login-submit-btn');
     if (btn) {

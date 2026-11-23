@@ -652,5 +652,60 @@
                 getSaveBar();
             }
         }
+
+        // 4. Protección CSRF automática en formularios POST y peticiones fetch()
+        injectCsrfIntoAllForms();
     });
+
+    function getCsrfToken() {
+        const meta = document.querySelector('meta[name="csrf-token"]');
+        return meta ? (meta.getAttribute('content') || '') : '';
+    }
+
+    function injectCsrfIntoForm(form) {
+        if (!form || !form.tagName || form.tagName.toUpperCase() !== 'FORM') return;
+        const method = (form.getAttribute('method') || 'GET').toUpperCase();
+        if (method !== 'POST') return;
+        const token = getCsrfToken();
+        if (!token) return;
+        let inp = form.querySelector('input[name="_csrf_token"]');
+        if (!inp) {
+            inp = document.createElement('input');
+            inp.type = 'hidden';
+            inp.name = '_csrf_token';
+            form.appendChild(inp);
+        }
+        inp.value = token;
+    }
+
+    function injectCsrfIntoAllForms() {
+        document.querySelectorAll('form').forEach(injectCsrfIntoForm);
+    }
+
+    document.addEventListener('submit', function(e) {
+        if (e.target && e.target.tagName === 'FORM') {
+            injectCsrfIntoForm(e.target);
+        }
+    }, true);
+
+    if (typeof window.fetch === 'function') {
+        const origFetch = window.fetch.bind(window);
+        window.fetch = function(input, init) {
+            const opts = Object.assign({}, init || {});
+            const method = (opts.method || (input && input.method) || 'GET').toUpperCase();
+            const token = getCsrfToken();
+            if (method === 'POST' && token) {
+                const urlStr = typeof input === 'string' ? input : (input && input.url ? input.url : '');
+                const sameOrigin = !urlStr || urlStr.startsWith('/') || urlStr.startsWith(window.location.origin);
+                if (sameOrigin) {
+                    const headers = new Headers(opts.headers || (input && input.headers) || {});
+                    if (!headers.has('X-CSRF-Token')) {
+                        headers.set('X-CSRF-Token', token);
+                    }
+                    opts.headers = headers;
+                }
+            }
+            return origFetch(input, opts);
+        };
+    }
 })();
