@@ -1521,5 +1521,64 @@ class StoreController {
         ], JSON_UNESCAPED_UNICODE);
         exit;
     }
+
+    // ==========================================
+    // BUSCADOR EN VIVO (API) Y SEO (SITEMAP / ROBOTS)
+    // ==========================================
+    public function apiSearch(): void {
+        header('Content-Type: application/json; charset=utf-8');
+        $q = trim((string)($_GET['q'] ?? ''));
+        $curr = $this->getCurrency();
+        $baseUrl = defined('APP_URL') ? rtrim((string)APP_URL, '/') : '';
+
+        if (strlen($q) < 2) {
+            echo json_encode([
+                'ok' => true,
+                'query' => $q,
+                'total' => 0,
+                'currency' => $curr,
+                'items' => [],
+            ], JSON_UNESCAPED_UNICODE);
+            exit;
+        }
+
+        $res = CatalogHelper::queryCatalog(['q' => $q, 'per_page' => 6, 'page' => 1], 6);
+        $items = [];
+        foreach ($res['products'] as $p) {
+            $sku = !empty($p['sku']) ? (string)$p['sku'] : (string)($p['variant_sku_sample'] ?? '');
+            $items[] = [
+                'id' => (int)$p['id'],
+                'name' => (string)$p['name'],
+                'slug' => (string)$p['slug'],
+                'sku' => $sku,
+                'category_name' => (string)($p['category_name'] ?? 'Catálogo'),
+                'price' => (float)$p['price'],
+                'compare_price' => !empty($p['compare_price']) ? (float)$p['compare_price'] : null,
+                'image_url' => !empty($p['featured_image']) ? ThemeManager::resolveImageUrl((string)$p['featured_image'], $baseUrl) : '',
+                'url' => $baseUrl . '/product/' . rawurlencode((string)$p['slug']),
+            ];
+        }
+
+        echo json_encode([
+            'ok' => true,
+            'query' => $q,
+            'total' => (int)$res['totalProducts'],
+            'currency' => $curr,
+            'items' => $items,
+        ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        exit;
+    }
+
+    public function sitemapXml(): void {
+        header('Content-Type: application/xml; charset=utf-8');
+        echo \ShopCMS\Core\SeoHelper::buildSitemapXml();
+        exit;
+    }
+
+    public function robotsTxt(): void {
+        header('Content-Type: text/plain; charset=utf-8');
+        echo \ShopCMS\Core\SeoHelper::buildRobotsTxt();
+        exit;
+    }
 }
 

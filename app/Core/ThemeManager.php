@@ -272,6 +272,10 @@ class ThemeManager {
         }
         extract($data);
         $baseUrl = defined('APP_URL') ? APP_URL : '';
+        $data['storeName'] = $data['storeName'] ?? Settings::get('store_name', 'ShopCMS Store');
+        $data['themeSlug'] = $theme;
+        $data['themeConfig'] = $themeConfig;
+        SeoHelper::setContext($data);
         $headerFile = dirname(__DIR__, 2) . '/themes/' . $theme . '/views/header.php';
         if (!file_exists($headerFile)) {
             $headerFile = dirname(__DIR__, 2) . '/themes/minimal-shop/views/header.php';

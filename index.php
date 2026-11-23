@@ -186,6 +186,9 @@ Router::get('/catalog', [StoreController::class, 'catalog']);
 Router::get('/product/{slug}', [StoreController::class, 'product']);
 Router::get('/page/{slug}', [StoreController::class, 'page']);
 Router::post('/newsletter/subscribe', [StoreController::class, 'newsletterSubscribe']);
+Router::get('/api/search', [StoreController::class, 'apiSearch']);
+Router::get('/sitemap.xml', [StoreController::class, 'sitemapXml']);
+Router::get('/robots.txt', [StoreController::class, 'robotsTxt']);
 
 // MÃ³dulo 2: Carrito y Checkout
 Router::get('/cart', [StoreController::class, 'cart']);

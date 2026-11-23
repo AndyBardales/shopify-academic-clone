@@ -654,7 +654,130 @@
 
         // 4. Protección CSRF automática en formularios POST y peticiones fetch()
         injectCsrfIntoAllForms();
+
+        // 5. Buscador en vivo global en cabecera de tienda (Storefront)
+        if (!isAdminContext) {
+            initStorefrontLiveSearch();
+        }
     });
+
+    function initStorefrontLiveSearch() {
+        const header = document.querySelector('header.site-header');
+        if (!header || document.getElementById('scms-header-search-wrap')) return;
+        const actions = header.querySelector('.header-actions') || header.querySelector('.header-inner');
+        if (!actions) return;
+
+        const metaBase = document.querySelector('meta[name="scms-base-url"]');
+        const baseUrl = metaBase ? (metaBase.getAttribute('content') || '').replace(/\/$/, '') : '';
+
+        const wrap = document.createElement('div');
+        wrap.id = 'scms-header-search-wrap';
+        wrap.className = 'scms-header-search-wrap';
+        wrap.innerHTML = `
+            <button type="button" class="scms-header-search-toggle" aria-label="Abrir buscador" title="Buscar productos o SKU">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            </button>
+            <form method="GET" action="${baseUrl}/catalog" class="scms-header-search-form" role="search">
+                <input type="search" name="q" class="scms-header-search-input" placeholder="Buscar producto o SKU..." autocomplete="off" aria-label="Buscar producto o SKU">
+                <button type="submit" class="scms-header-search-submit" aria-label="Buscar">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                </button>
+            </form>
+            <div class="scms-search-dropdown" aria-live="polite"></div>
+        `;
+
+        actions.insertBefore(wrap, actions.firstChild);
+
+        const toggleBtn = wrap.querySelector('.scms-header-search-toggle');
+        const input = wrap.querySelector('.scms-header-search-input');
+        const dropdown = wrap.querySelector('.scms-search-dropdown');
+        let timer = null;
+        let controller = null;
+
+        function esc(str) {
+            return String(str || '').replace(/[&<>"']/g, function(ch) {
+                return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[ch];
+            });
+        }
+
+        function closeDropdown() {
+            dropdown.classList.remove('open');
+        }
+
+        toggleBtn.addEventListener('click', function() {
+            wrap.classList.toggle('is-mobile-open');
+            if (wrap.classList.contains('is-mobile-open')) {
+                setTimeout(function() { input.focus(); }, 40);
+            } else {
+                closeDropdown();
+            }
+        });
+
+        input.addEventListener('input', function() {
+            const q = input.value.trim();
+            clearTimeout(timer);
+            if (q.length < 2) {
+                closeDropdown();
+                return;
+            }
+            timer = setTimeout(async function() {
+                if (controller) controller.abort();
+                controller = new AbortController();
+                try {
+                    const res = await fetch(baseUrl + '/api/search?q=' + encodeURIComponent(q), {
+                        signal: controller.signal
+                    });
+                    if (!res.ok) return;
+                    const data = await res.json();
+                    if (!data || !data.ok) return;
+                    const sym = (data.currency && data.currency.symbol) ? data.currency.symbol : '$';
+                    if (!data.items || !data.items.length) {
+                        dropdown.innerHTML = '<div class="scms-search-empty">Sin coincidencias para "' + esc(q) + '".</div>';
+                    } else {
+                        const rowsHtml = data.items.map(function(it) {
+                            const imgHtml = it.image_url
+                                ? '<img src="' + esc(it.image_url) + '" alt="' + esc(it.name) + '">'
+                                : '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#9CA3AF" stroke-width="1.8"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>';
+                            const skuTxt = it.sku ? (' · SKU: ' + it.sku) : '';
+                            return '<a class="scms-search-item" href="' + esc(it.url) + '">'
+                                + '<div class="scms-search-thumb">' + imgHtml + '</div>'
+                                + '<div class="scms-search-meta">'
+                                + '<div class="scms-search-title">' + esc(it.name) + '</div>'
+                                + '<div class="scms-search-sub">' + esc(it.category_name + skuTxt) + '</div>'
+                                + '</div>'
+                                + '<div class="scms-search-price">' + esc(sym) + Number(it.price || 0).toFixed(2) + '</div>'
+                                + '</a>';
+                        }).join('');
+                        dropdown.innerHTML = rowsHtml
+                            + '<a class="scms-search-footer" href="' + esc(baseUrl) + '/catalog?q=' + encodeURIComponent(q) + '">Ver los ' + Number(data.total || data.items.length) + ' resultados en el catálogo</a>';
+                    }
+                    dropdown.classList.add('open');
+                } catch (err) {
+                    if (err && err.name !== 'AbortError') closeDropdown();
+                }
+            }, 220);
+        });
+
+        input.addEventListener('focus', function() {
+            if (input.value.trim().length >= 2 && dropdown.innerHTML !== '') {
+                dropdown.classList.add('open');
+            }
+        });
+
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') {
+                closeDropdown();
+                wrap.classList.remove('is-mobile-open');
+            }
+        });
+
+        document.addEventListener('click', function(e) {
+            if (!wrap.contains(e.target)) {
+                closeDropdown();
+                wrap.classList.remove('is-mobile-open');
+            }
+        });
+    }
 
     function getCsrfToken() {
         const meta = document.querySelector('meta[name="csrf-token"]');
