@@ -2186,37 +2186,175 @@ class AdminController {
             exit;
         }
 
-        $ext = strtolower(pathinfo((string)$_FILES['asset_file']['name'], PATHINFO_EXTENSION));
+        $tmpPath = (string)$_FILES['asset_file']['tmp_name'];
+        $origName = (string)($_FILES['asset_file']['name'] ?? 'asset');
+        $rawSize = (int)($_FILES['asset_file']['size'] ?? 0);
+        $assetKind = (($_POST['asset_kind'] ?? '') === 'logo') ? 'logo' : 'banner';
+        $ext = strtolower(pathinfo($origName, PATHINFO_EXTENSION));
         $allowed = ['png', 'jpg', 'jpeg', 'webp', 'svg'];
+
         if (!in_array($ext, $allowed, true)) {
             http_response_code(400);
-            echo json_encode(['ok' => false, 'error' => 'Formato permitido: PNG, JPG, WEBP o SVG.']);
+            echo json_encode(['ok' => false, 'error' => 'Formato permitido: PNG, JPG, JPEG, WEBP o SVG.']);
             exit;
         }
 
-        if ((int)$_FILES['asset_file']['size'] > 4 * 1024 * 1024) {
+        // Regla 2: Máximo 5 MB de entrada
+        if ($rawSize <= 0 || $rawSize > 5 * 1024 * 1024) {
             http_response_code(400);
-            echo json_encode(['ok' => false, 'error' => 'La imagen no debe superar los 4 MB.']);
+            echo json_encode(['ok' => false, 'error' => 'La imagen original no debe superar los 5 MB.']);
             exit;
         }
 
-        $cleanSlug = preg_replace('/[^a-zA-Z0-9\-_]/', '', $slug);
-        $uploadDir = dirname(__DIR__, 2) . '/assets/images/themes';
+        // Validar MIME real por contenido
+        $detectedMime = '';
+        if (function_exists('finfo_open')) {
+            $finfo = @finfo_open(FILEINFO_MIME_TYPE);
+            if ($finfo) {
+                $detectedMime = (string)@finfo_file($finfo, $tmpPath);
+                @finfo_close($finfo);
+            }
+        }
+
+        $cleanSlug = preg_replace('/[^a-zA-Z0-9\-_]/', '', $slug) ?: 'theme';
+        $uploadDir = dirname(__DIR__, 2) . '/uploads/themes';
         if (!is_dir($uploadDir)) {
             mkdir($uploadDir, 0775, true);
         }
 
-        $filename = $cleanSlug . '-' . time() . '-' . bin2hex(random_bytes(3)) . '.' . $ext;
-        $dest = $uploadDir . '/' . $filename;
-        if (!move_uploaded_file($_FILES['asset_file']['tmp_name'], $dest)) {
-            http_response_code(500);
-            echo json_encode(['ok' => false, 'error' => 'No se pudo guardar el archivo en el servidor.']);
+        $prefix = $assetKind === 'logo' ? 'logo-' : 'asset-';
+
+        // Caso SVG vectorial sanitizado
+        if ($ext === 'svg' || str_contains($detectedMime, 'svg')) {
+            $svgRaw = (string)file_get_contents($tmpPath);
+            if (stripos($svgRaw, '<svg') === false) {
+                http_response_code(400);
+                echo json_encode(['ok' => false, 'error' => 'El archivo SVG no es válido.']);
+                exit;
+            }
+            $svgClean = preg_replace('#<script\b[^>]*>.*?</script>#is', '', $svgRaw);
+            $svgClean = preg_replace('#<foreignObject\b[^>]*>.*?</foreignObject>#is', '', (string)$svgClean);
+            $svgClean = preg_replace('/\bon[a-z]+\s*=\s*(?:"[^"]*"|\'[^\']*\'|[^\s>]+)/i', '', (string)$svgClean);
+            $svgClean = preg_replace('/javascript\s*:/i', '', (string)$svgClean);
+
+            $maxSvgBytes = $assetKind === 'logo' ? 500 * 1024 : 2 * 1024 * 1024;
+            if (strlen((string)$svgClean) > $maxSvgBytes) {
+                http_response_code(400);
+                echo json_encode(['ok' => false, 'error' => 'El archivo SVG optimizado excede el límite permitido (' . ($assetKind === 'logo' ? '500 KB' : '2 MB') . ').']);
+                exit;
+            }
+
+            $filename = $prefix . $cleanSlug . '-' . time() . '-' . bin2hex(random_bytes(3)) . '.svg';
+            $dest = $uploadDir . '/' . $filename;
+            if (file_put_contents($dest, $svgClean) === false) {
+                http_response_code(500);
+                echo json_encode(['ok' => false, 'error' => 'No se pudo guardar el SVG en el servidor.']);
+                exit;
+            }
+
+            echo json_encode([
+                'ok' => true,
+                'path' => 'uploads/themes/' . $filename,
+                'format' => 'svg',
+                'width' => null,
+                'height' => null,
+                'bytes' => filesize($dest) ?: strlen((string)$svgClean),
+                'converted_webp' => false,
+            ]);
+            exit;
+        }
+
+        // Casos raster (PNG / JPG / JPEG / WEBP)
+        $imgInfo = @getimagesize($tmpPath);
+        if (!$imgInfo || !in_array((int)$imgInfo[2], [IMAGETYPE_PNG, IMAGETYPE_JPEG, IMAGETYPE_WEBP], true)) {
+            http_response_code(400);
+            echo json_encode(['ok' => false, 'error' => 'El contenido binario no corresponde a una imagen PNG, JPG o WEBP válida.']);
+            exit;
+        }
+
+        $srcW = (int)$imgInfo[0];
+        $srcH = (int)$imgInfo[1];
+        $srcType = (int)$imgInfo[2];
+        if ($srcW <= 0 || $srcH <= 0 || $srcW > 4096 || $srcH > 4096) {
+            http_response_code(400);
+            echo json_encode(['ok' => false, 'error' => 'La imagen debe medir máximo 4096 x 4096 píxeles.']);
+            exit;
+        }
+
+        $maxW = $assetKind === 'logo' ? 480 : 1600;
+        $maxH = $assetKind === 'logo' ? 160 : 900;
+        $maxOutBytes = $assetKind === 'logo' ? 500 * 1024 : 4 * 1024 * 1024;
+
+        $finalExt = $srcType === IMAGETYPE_WEBP ? 'webp' : ($srcType === IMAGETYPE_PNG ? 'png' : 'jpg');
+        $finalW = $srcW;
+        $finalH = $srcH;
+        $savedViaGd = false;
+
+        // Si PHP GD con WebP está habilitado y (no es WebP o excede dimensiones objetivo), normalizar y convertir en backend
+        if (function_exists('imagewebp') && ($srcType !== IMAGETYPE_WEBP || $srcW > $maxW || $srcH > $maxH)) {
+            $srcImg = null;
+            if ($srcType === IMAGETYPE_PNG && function_exists('imagecreatefrompng')) {
+                $srcImg = @imagecreatefrompng($tmpPath);
+            } elseif ($srcType === IMAGETYPE_JPEG && function_exists('imagecreatefromjpeg')) {
+                $srcImg = @imagecreatefromjpeg($tmpPath);
+            } elseif ($srcType === IMAGETYPE_WEBP && function_exists('imagecreatefromwebp')) {
+                $srcImg = @imagecreatefromwebp($tmpPath);
+            }
+
+            if ($srcImg) {
+                $scale = min($maxW / $srcW, $maxH / $srcH, 1.0);
+                $finalW = max(1, (int)round($srcW * $scale));
+                $finalH = max(1, (int)round($srcH * $scale));
+
+                $dstImg = imagecreatetruecolor($finalW, $finalH);
+                imagealphablending($dstImg, false);
+                imagesavealpha($dstImg, true);
+                $transparent = imagecolorallocatealpha($dstImg, 0, 0, 0, 127);
+                imagefilledrectangle($dstImg, 0, 0, $finalW, $finalH, $transparent);
+                imagecopyresampled($dstImg, $srcImg, 0, 0, 0, 0, $finalW, $finalH, $srcW, $srcH);
+
+                $filename = $prefix . $cleanSlug . '-' . time() . '-' . bin2hex(random_bytes(3)) . '.webp';
+                $dest = $uploadDir . '/' . $filename;
+                if (@imagewebp($dstImg, $dest, 90)) {
+                    $finalExt = 'webp';
+                    $savedViaGd = true;
+                }
+                imagedestroy($srcImg);
+                imagedestroy($dstImg);
+            }
+        }
+
+        if (!$savedViaGd) {
+            if ($assetKind === 'logo' && $rawSize > $maxOutBytes) {
+                http_response_code(400);
+                echo json_encode(['ok' => false, 'error' => 'El logotipo final optimizado no debe superar los 500 KB.']);
+                exit;
+            }
+            $filename = $prefix . $cleanSlug . '-' . time() . '-' . bin2hex(random_bytes(3)) . '.' . $finalExt;
+            $dest = $uploadDir . '/' . $filename;
+            if (!move_uploaded_file($tmpPath, $dest) && !@copy($tmpPath, $dest)) {
+                http_response_code(500);
+                echo json_encode(['ok' => false, 'error' => 'No se pudo guardar el archivo en el servidor.']);
+                exit;
+            }
+        }
+
+        $outBytes = filesize($dest) ?: $rawSize;
+        if ($assetKind === 'logo' && $outBytes > $maxOutBytes) {
+            @unlink($dest);
+            http_response_code(400);
+            echo json_encode(['ok' => false, 'error' => 'El logotipo convertido superó el límite de 500 KB.']);
             exit;
         }
 
         echo json_encode([
             'ok' => true,
-            'path' => 'assets/images/themes/' . $filename
+            'path' => 'uploads/themes/' . $filename,
+            'format' => $finalExt,
+            'width' => $finalW,
+            'height' => $finalH,
+            'bytes' => $outBytes,
+            'converted_webp' => ($finalExt === 'webp'),
         ]);
         exit;
     }

@@ -340,6 +340,72 @@ $previewProductPath = !empty($sampleProductSlug) ? '/product/' . $sampleProductS
             display: none;
         }
         .studio-toast.show { display: block; }
+
+        .how-use-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            padding: 3px 10px;
+            border-radius: 999px;
+            border: 1px solid #D1D5DB;
+            background: #FFFFFF;
+            color: #374151;
+            font-size: 11px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: border-color 0.15s, background-color 0.15s;
+        }
+        .how-use-pill:hover {
+            border-color: #008060;
+            background: #F0FDF4;
+            color: #065F46;
+        }
+        .guide-modal-backdrop {
+            display: none;
+            position: fixed;
+            inset: 0;
+            z-index: 10050;
+            background: rgba(15, 23, 42, 0.55);
+            align-items: center;
+            justify-content: center;
+            padding: 18px;
+        }
+        .guide-modal-card {
+            background: #FFFFFF;
+            border: 1px solid #E5E7EB;
+            border-radius: 14px;
+            width: 100%;
+            max-width: 640px;
+            max-height: 88vh;
+            overflow-y: auto;
+            padding: 20px 22px;
+            box-shadow: 0 24px 48px rgba(0,0,0,0.22);
+        }
+        .guide-steps-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+            gap: 12px;
+        }
+        .guide-step-box {
+            background: #FFFFFF;
+            border: 1px solid #E5E7EB;
+            border-radius: 9px;
+            padding: 12px 14px;
+            display: flex;
+            gap: 10px;
+            align-items: flex-start;
+        }
+        .guide-num {
+            width: 22px;
+            height: 22px;
+            border-radius: 50%;
+            font-weight: 700;
+            font-size: 12px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+        }
     </style>
 </head>
 <body>
@@ -977,10 +1043,138 @@ function makeSwitchCtrl(label, checked, onChange) {
     return row;
 }
 
-function makeImageUploadCtrl(label, currentVal, onChange, reloadIframeOnUpload) {
+async function convertFileToOptimizedWebp(file, isLogo) {
+    const ext = (file.name.split('.').pop() || '').toLowerCase();
+    const allowedExts = ['png', 'jpg', 'jpeg', 'webp', 'svg'];
+    if (!allowedExts.includes(ext)) {
+        throw new Error('Formato no permitido. Usa PNG, JPG, JPEG, WEBP o SVG.');
+    }
+    if (file.size > 5 * 1024 * 1024) {
+        throw new Error('La imagen original supera el límite de 5 MB.');
+    }
+    if (ext === 'svg' || file.type === 'image/svg+xml') {
+        const maxSvg = isLogo ? 500 * 1024 : 2 * 1024 * 1024;
+        if (file.size > maxSvg) {
+            throw new Error('El SVG excede el límite permitido (' + (isLogo ? '500 KB' : '2 MB') + ').');
+        }
+        return { uploadBlob: file, uploadName: file.name, converted: false, origW: null, origH: null, finalW: null, finalH: null };
+    }
+
+    const objUrl = URL.createObjectURL(file);
+    try {
+        const img = await new Promise((resolve, reject) => {
+            const i = new Image();
+            i.onload = () => resolve(i);
+            i.onerror = () => reject(new Error('No se pudo leer la imagen seleccionada.'));
+            i.src = objUrl;
+        });
+
+        const w = img.naturalWidth || img.width;
+        const h = img.naturalHeight || img.height;
+        if (!w || !h || w > 4096 || h > 4096) {
+            throw new Error('La resolución máxima permitida es 4096 x 4096 píxeles.');
+        }
+
+        const maxW = isLogo ? 480 : 1600;
+        const maxH = isLogo ? 160 : 900;
+        const scale = Math.min(maxW / w, maxH / h, 1);
+        const targetW = Math.max(1, Math.round(w * scale));
+        const targetH = Math.max(1, Math.round(h * scale));
+
+        const canvas = document.createElement('canvas');
+        canvas.width = targetW;
+        canvas.height = targetH;
+        const ctx = canvas.getContext('2d');
+        ctx.clearRect(0, 0, targetW, targetH);
+        ctx.drawImage(img, 0, 0, targetW, targetH);
+
+        const webpBlob = await new Promise(resolve => canvas.toBlob(resolve, 'image/webp', 0.90));
+        if (!webpBlob) {
+            throw new Error('Tu navegador no pudo convertir la imagen a formato WebP.');
+        }
+        if (isLogo && webpBlob.size > 500 * 1024) {
+            throw new Error('El logotipo optimizado supera los 500 KB.');
+        }
+        const baseName = file.name.replace(/\.[^/.]+$/, '').replace(/[^a-zA-Z0-9\-_]/g, '') || 'imagen';
+        return {
+            uploadBlob: webpBlob,
+            uploadName: baseName + '.webp',
+            converted: true,
+            origW: w,
+            origH: h,
+            finalW: targetW,
+            finalH: targetH
+        };
+    } finally {
+        URL.revokeObjectURL(objUrl);
+    }
+}
+
+function openImageGuideModal(isLogo) {
+    const modal = document.getElementById('scms-image-guide-modal');
+    if (!modal) return;
+    const dimText = document.getElementById('scms-guide-dim-text');
+    const weightText = document.getElementById('scms-guide-weight-text');
+    if (dimText) {
+        dimText.textContent = isLogo
+            ? 'Para logotipo se escala proporcionalmente hasta 480 × 160 px (calidad Retina 2x) sin deformar.'
+            : 'Para banners/fondos se escala proporcionalmente hasta 1600 × 900 px.';
+    }
+    if (weightText) {
+        weightText.textContent = isLogo
+            ? 'Peso máximo final de 500 KB tras optimizar a WebP (calidad 90%).'
+            : 'Peso máximo final de 4 MB optimizado a WebP (calidad 90%).';
+    }
+    modal.style.display = 'flex';
+}
+
+function closeImageGuideModal() {
+    const modal = document.getElementById('scms-image-guide-modal');
+    if (modal) modal.style.display = 'none';
+}
+
+function makeImageUploadCtrl(label, currentVal, onChange, reloadIframeOnUpload, isLogo) {
+    const logoMode = !!isLogo;
     const wrap = document.createElement('div');
     wrap.className = 'ctrl-group';
-    wrap.innerHTML = `<label class="ctrl-label"><span>${label}</span></label>`;
+
+    const lblRow = document.createElement('div');
+    lblRow.className = 'ctrl-label';
+
+    const lblText = document.createElement('span');
+    lblText.textContent = label;
+
+    const helpBtn = document.createElement('button');
+    helpBtn.type = 'button';
+    helpBtn.className = 'how-use-pill';
+    helpBtn.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path><line x1="12" y1="17" x2="12.01" y2="17"></line></svg><span>¿Cómo usar?</span>';
+    helpBtn.onclick = () => openImageGuideModal(logoMode);
+
+    lblRow.appendChild(lblText);
+    lblRow.appendChild(helpBtn);
+    wrap.appendChild(lblRow);
+
+    const previewBox = document.createElement('div');
+    previewBox.style.cssText = 'display:none;align-items:center;gap:10px;padding:7px 9px;margin-bottom:6px;background:#F9FAFB;border:1px solid #E5E7EB;border-radius:7px;';
+    const previewImg = document.createElement('img');
+    previewImg.style.cssText = 'height:32px;max-width:96px;object-fit:contain;border-radius:4px;background:#FFFFFF;padding:2px;border:1px solid #E5E7EB;';
+    const previewMeta = document.createElement('div');
+    previewMeta.style.cssText = 'font-size:11px;color:#4B5563;line-height:1.35;word-break:break-word;';
+    previewBox.appendChild(previewImg);
+    previewBox.appendChild(previewMeta);
+
+    const updateMiniPreview = (val, infoMsg) => {
+        const clean = (val || '').trim();
+        if (!clean) {
+            previewBox.style.display = 'none';
+            return;
+        }
+        const resolved = (/^https?:\/\//i.test(clean) || clean.indexOf('/') === 0) ? clean : (BASE_URL + '/' + clean);
+        previewImg.src = resolved;
+        const extLabel = (clean.split('.').pop() || '').split('?')[0].toUpperCase() || 'IMG';
+        previewMeta.textContent = infoMsg || ('Formato activo: ' + extLabel);
+        previewBox.style.display = 'flex';
+    };
 
     const txt = document.createElement('input');
     txt.type = 'text';
@@ -990,7 +1184,9 @@ function makeImageUploadCtrl(label, currentVal, onChange, reloadIframeOnUpload) 
     txt.style.marginBottom = '6px';
     txt.addEventListener('change', () => {
         pushUndoSnapshot();
-        onChange(txt.value.trim());
+        const v = txt.value.trim();
+        onChange(v);
+        updateMiniPreview(v);
         syncPreview();
     });
 
@@ -1000,7 +1196,7 @@ function makeImageUploadCtrl(label, currentVal, onChange, reloadIframeOnUpload) 
 
     const fileInput = document.createElement('input');
     fileInput.type = 'file';
-    fileInput.accept = '.png,.jpg,.jpeg,.webp,.svg';
+    fileInput.accept = '.png,.jpg,.jpeg,.webp,.svg,image/png,image/jpeg,image/webp,image/svg+xml';
     fileInput.style.display = 'none';
 
     const upBtn = document.createElement('button');
@@ -1019,15 +1215,20 @@ function makeImageUploadCtrl(label, currentVal, onChange, reloadIframeOnUpload) 
         pushUndoSnapshot();
         txt.value = '';
         onChange('');
+        updateMiniPreview('');
         syncPreview();
     };
 
     fileInput.onchange = async () => {
         if (!fileInput.files.length) return;
-        const fd = new FormData();
-        fd.append('asset_file', fileInput.files[0]);
-        upBtn.textContent = 'Subiendo...';
+        const origFile = fileInput.files[0];
+        upBtn.textContent = 'Optimizando WebP...';
         try {
+            const processed = await convertFileToOptimizedWebp(origFile, logoMode);
+            const fd = new FormData();
+            fd.append('asset_kind', logoMode ? 'logo' : 'banner');
+            fd.append('asset_file', processed.uploadBlob, processed.uploadName);
+            upBtn.textContent = 'Subiendo...';
             const res = await fetch(BASE_URL + '/admin/themes/customize/' + encodeURIComponent(THEME_SLUG) + '/upload-asset', {
                 method: 'POST',
                 headers: { 'X-CSRF-Token': CSRF_TOKEN },
@@ -1038,17 +1239,27 @@ function makeImageUploadCtrl(label, currentVal, onChange, reloadIframeOnUpload) 
             pushUndoSnapshot();
             txt.value = data.path;
             onChange(data.path);
+            const kb = data.bytes ? Math.max(1, Math.round(data.bytes / 1024)) : null;
+            const dims = (data.width && data.height) ? (data.width + '×' + data.height + ' px') : 'Vectorial';
+            const metaText = (data.format || 'webp').toUpperCase() + ' · ' + dims + (kb ? (' · ' + kb + ' KB') : '');
+            updateMiniPreview(data.path, metaText);
             syncPreview();
-            if (reloadIframeOnUpload) showToast('Imagen subida. Pulsa Guardar si deseas fijarla en el CSS.');
+            showToast(data.converted_webp
+                ? ('Convertido a WebP (' + metaText + '). Pulsa Guardar para confirmar.')
+                : ('Imagen subida (' + metaText + '). Pulsa Guardar para confirmar.')
+            );
         } catch (err) {
             showToast(err.message);
         } finally {
             upBtn.textContent = 'Subir Imagen';
+            fileInput.value = '';
         }
     };
 
+    updateMiniPreview(currentVal || '');
     row.appendChild(upBtn);
     row.appendChild(clearBtn);
+    wrap.appendChild(previewBox);
     wrap.appendChild(txt);
     wrap.appendChild(row);
     wrap.appendChild(fileInput);
@@ -1099,7 +1310,7 @@ function renderInspector(focusGlobalPart) {
         palWrap.appendChild(palGrid);
         body.appendChild(palWrap);
 
-        body.appendChild(makeImageUploadCtrl('Logotipo Personalizado', g.logo_url, v => g.logo_url = v, false));
+        body.appendChild(makeImageUploadCtrl('Logotipo Personalizado', g.logo_url, v => g.logo_url = v, false, true));
         body.appendChild(makeRangeCtrl('Altura del Logotipo', g.logo_height, 20, 72, 'px', v => g.logo_height = v));
         body.appendChild(makeSelectCtrl('Tipografía Principal', g.font_family, [
             { value: 'Inter', label: 'Inter (Moderna)' },
@@ -1127,7 +1338,7 @@ function renderInspector(focusGlobalPart) {
         const g = themeConfig.global;
         titleEl.textContent = 'Encabezado y Logotipo';
         subEl.textContent = 'Personaliza la marca y colores de la barra superior.';
-        body.appendChild(makeImageUploadCtrl('Logotipo de la Tienda', g.logo_url, v => g.logo_url = v, false));
+        body.appendChild(makeImageUploadCtrl('Logotipo de la Tienda', g.logo_url, v => g.logo_url = v, false, true));
         body.appendChild(makeRangeCtrl('Altura del Logotipo', g.logo_height, 20, 72, 'px', v => g.logo_height = v));
         body.appendChild(makeColorCtrl('Fondo de Cabecera', g.color_header_bg, v => g.color_header_bg = v));
         body.appendChild(makeColorCtrl('Color de Enlaces y Texto', g.color_header_text, v => g.color_header_text = v));
@@ -1382,5 +1593,56 @@ document.addEventListener('DOMContentLoaded', function() {
     updateHistoryButtons();
 });
 </script>
+
+<!-- MODAL GUIA NUMERADA ¿COMO USAR? PARA SUBIDA DE LOGOTIPOS E IMAGENES -->
+<div id="scms-image-guide-modal" class="guide-modal-backdrop" onclick="if(event.target===this) closeImageGuideModal();">
+    <div class="guide-modal-card">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
+            <div style="display: flex; align-items: center; gap: 8px;">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#008060" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                    <circle cx="8.5" cy="8.5" r="1.5"></circle>
+                    <polyline points="21 15 16 10 5 21"></polyline>
+                </svg>
+                <strong style="font-size: 14.5px; color: #111827;">¿Cómo subir y optimizar tu Logotipo en WebP?</strong>
+            </div>
+            <button type="button" onclick="closeImageGuideModal()" style="background: none; border: none; color: #6B7280; font-size: 13px; cursor: pointer; text-decoration: underline;">Ocultar</button>
+        </div>
+
+        <div class="guide-steps-grid">
+            <div class="guide-step-box">
+                <span class="guide-num" style="background: #E8F5E9; color: #008060;">1</span>
+                <div>
+                    <div style="font-size: 12.5px; font-weight: 700; color: #111827; margin-bottom: 3px;">Formatos y límites de entrada</div>
+                    <div style="font-size: 12px; color: #6B7280; line-height: 1.45;">Se admiten <strong>PNG, JPG, JPEG, WEBP y SVG</strong> (verificados por firma real) de hasta <strong>5 MB</strong> y <strong>4096 × 4096 px</strong> máximo.</div>
+                </div>
+            </div>
+            <div class="guide-step-box">
+                <span class="guide-num" style="background: #FFF5EA; color: #B95000;">2</span>
+                <div>
+                    <div style="font-size: 12.5px; font-weight: 700; color: #111827; margin-bottom: 3px;">Conversión automática a WebP</div>
+                    <div style="font-size: 12px; color: #6B7280; line-height: 1.45;">Cualquier PNG/JPG/WEBP se convierte al instante a <strong>WebP (90% calidad)</strong> preservando fondo transparente. Si subes SVG limpio se conserva vectorial.</div>
+                </div>
+            </div>
+            <div class="guide-step-box">
+                <span class="guide-num" style="background: #EBF5FA; color: #006FAD;">3</span>
+                <div>
+                    <div style="font-size: 12.5px; font-weight: 700; color: #111827; margin-bottom: 3px;">Dimensiones y peso optimizados</div>
+                    <div style="font-size: 12px; color: #6B7280; line-height: 1.45;">
+                        <span id="scms-guide-dim-text">Para logotipo se escala proporcionalmente hasta 480 × 160 px (calidad Retina 2x) sin deformar.</span>
+                        <span id="scms-guide-weight-text"> Peso máximo final de 500 KB.</span>
+                    </div>
+                </div>
+            </div>
+            <div class="guide-step-box">
+                <span class="guide-num" style="background: #F3E8FF; color: #6B21A8;">4</span>
+                <div>
+                    <div style="font-size: 12.5px; font-weight: 700; color: #111827; margin-bottom: 3px;">Previsualiza, regula y guarda</div>
+                    <div style="font-size: 12px; color: #6B7280; line-height: 1.45;">Ajusta <strong>Altura del Logotipo</strong> (20–72 px), prueba Desktop/Tablet/Móvil y pulsa <strong>Guardar</strong> arriba para fijarlo.</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
 </body>
 </html>
