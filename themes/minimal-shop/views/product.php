@@ -225,131 +225,18 @@ $prodBuiltIn = [];
 
     <!-- SECCIÓN DE RESEÑAS (COMPRADORES VERIFICADOS) -->
     <?php
-    $isCustomerLoggedIn = \ShopCMS\Core\Auth::isCustomer();
-    $customerInfo = \ShopCMS\Core\Auth::customer();
-    $hasPurchased = $isCustomerLoggedIn ? \ShopCMS\Core\Auth::hasPurchasedProduct((int)$customerInfo['id'], (int)$product['id']) : false;
-    ob_start();
+    $prodBuiltIn['product_reviews'] = \ShopCMS\Core\StorefrontExperience::renderProductReviewsSection(
+        $product,
+        $reviews ?? [],
+        $baseUrl,
+        [
+            'title'         => $pRev['title'] ?? 'Opiniones de Clientes',
+            'star_active'   => '#F59E0B',
+            'star_empty'    => '#E5E7EB',
+            'use_container' => true,
+        ]
+    );
     ?>
-    <section data-theme-section="product_reviews" data-section-label="Reseñas de Clientes" style="padding: 36px 0; border-top: 2px solid var(--color-border);">
-        <div class="container">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
-            <h2 style="font-size: 24px; font-weight: 700;" data-theme-field="title"><?= htmlspecialchars($pRev['title'] ?? 'Opiniones de Clientes') ?> (<?= count($reviews) ?>)</h2>
-        </div>
-
-        <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 40px;">
-            <!-- LISTA DE RESEÑAS -->
-            <div>
-                <?php if (empty($reviews)): ?>
-                    <p style="color: var(--color-text-light);">Aún no hay reseñas verificadas para este producto.</p>
-                <?php else: ?>
-                    <?php foreach ($reviews as $rev): ?>
-                        <div style="padding: 16px; border: 1px solid <?= !empty($rev['is_featured']) ? '#A7F3D0' : 'var(--color-border)' ?>; border-radius: 10px; margin-bottom: 16px; background: <?= !empty($rev['is_featured']) ? '#F9FEFC' : '#FFF' ?>;">
-                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; flex-wrap: wrap; gap: 6px;">
-                                <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
-                                    <div style="display: inline-flex; gap: 2px;">
-                                        <?php for ($s = 1; $s <= 5; $s++): ?>
-                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="<?= $s <= $rev['rating'] ? '#F59E0B' : '#E5E7EB' ?>" stroke="<?= $s <= $rev['rating'] ? '#F59E0B' : '#D1D5DB' ?>" stroke-width="1.5">
-                                                <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
-                                            </svg>
-                                        <?php endfor; ?>
-                                    </div>
-                                    <strong style="font-size: 14px;"><?= htmlspecialchars($rev['title'] ?: 'Opinión') ?></strong>
-                                    <span style="display: inline-flex; align-items: center; gap: 4px; font-size: 11px; color: #166534; background: #DCFCE7; padding: 2px 8px; border-radius: 4px; font-weight: 600;">
-                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                                            <polyline points="20 6 9 17 4 12"></polyline>
-                                        </svg>
-                                        Compra Verificada
-                                    </span>
-                                    <?php if (!empty($rev['is_featured'])): ?>
-                                        <span style="font-size: 11px; color: #92400E; background: #FEF3C7; padding: 2px 8px; border-radius: 4px; font-weight: 700;">Destacada</span>
-                                    <?php endif; ?>
-                                </div>
-                                <span style="font-size: 12px; color: var(--color-text-light);"><?= date('d/m/Y', strtotime($rev['created_at'])) ?></span>
-                            </div>
-                            <p style="font-size: 14px; color: var(--color-text); margin-bottom: 8px;"><?= nl2br(htmlspecialchars($rev['comment'])) ?></p>
-                            <small style="color: var(--color-text-light);">Por: <?= htmlspecialchars($rev['customer_name'] ?? $rev['author_name'] ?? 'Cliente') ?></small>
-                            <?php if (!empty($rev['admin_reply'])): ?>
-                                <div style="margin-top: 10px; padding: 10px 12px; background: #F3F4F6; border-left: 3px solid #008060; border-radius: 6px; font-size: 13px; color: #374151;">
-                                    <strong style="display: block; font-size: 11.5px; color: #008060; margin-bottom: 3px;">Respuesta oficial de la tienda</strong>
-                                    <?= nl2br(htmlspecialchars($rev['admin_reply'])) ?>
-                                </div>
-                            <?php endif; ?>
-                        </div>
-                    <?php endforeach; ?>
-                <?php endif; ?>
-            </div>
-
-            <!-- PANEL RESEÑA VERIFICADA -->
-            <div>
-                <?php if ($hasPurchased): ?>
-                    <div style="background: var(--color-surface); padding: 24px; border-radius: 12px; border: 1px solid var(--color-border); height: fit-content;">
-                        <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 12px; color: #166534; font-weight: 700; font-size: 13px;">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                                <polyline points="20 6 9 17 4 12"></polyline>
-                            </svg>
-                            <span>Comprador Verificado</span>
-                        </div>
-                        <h3 style="font-size: 16px; font-weight: 700; margin-bottom: 14px;">Comparte tu Experiencia</h3>
-                        <form method="POST" action="<?= $baseUrl ?>/account/review">
-                            <input type="hidden" name="product_id" value="<?= $product['id'] ?>">
-
-                            <div style="margin-bottom: 14px;">
-                                <label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 4px;">Tu Calificación *</label>
-                                <select name="rating" required style="width: 100%; padding: 8px; border-radius: 6px; border: 1px solid var(--color-border); font-size: 13px;">
-                                    <option value="5">5 de 5 estrellas - Excelente</option>
-                                    <option value="4">4 de 5 estrellas - Bueno</option>
-                                    <option value="3">3 de 5 estrellas - Regular</option>
-                                    <option value="2">2 de 5 estrellas - Regular bajo</option>
-                                    <option value="1">1 de 5 estrellas - Insatisfecho</option>
-                                </select>
-                            </div>
-
-                            <div style="margin-bottom: 14px;">
-                                <label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 4px;">Título de tu opinión</label>
-                                <input type="text" name="title" placeholder="Ej: Muy buena calidad" style="width: 100%; padding: 8px; border-radius: 6px; border: 1px solid var(--color-border); font-size: 13px;">
-                            </div>
-
-                            <div style="margin-bottom: 16px;">
-                                <label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 4px;">Comentario *</label>
-                                <textarea name="comment" rows="3" required placeholder="Cuéntale a otros clientes qué tal te pareció..." style="width: 100%; padding: 8px; border-radius: 6px; border: 1px solid var(--color-border); font-family: inherit; font-size: 13px;"></textarea>
-                            </div>
-
-                            <button type="submit" class="btn-store btn-store-primary" style="width: 100%; padding: 10px; font-size: 14px;">Publicar Opinión</button>
-                        </form>
-                    </div>
-                <?php elseif ($isCustomerLoggedIn): ?>
-                    <div style="background: var(--color-surface); padding: 24px; border-radius: 12px; border: 1px solid var(--color-border); text-align: center;">
-                        <div style="color: #008060; margin-bottom: 10px;">
-                            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
-                            </svg>
-                        </div>
-                        <h4 style="font-size: 15px; font-weight: 700; margin-bottom: 6px;">Opiniones 100% Reales</h4>
-                        <p style="font-size: 13px; color: var(--color-text-light); line-height: 1.5; margin-bottom: 16px;">
-                            Solo los clientes que han completado una compra de este producto pueden evaluarlo. Puedes calificar tus compras anteriores desde tu cuenta.
-                        </p>
-                        <a href="<?= $baseUrl ?>/account" class="btn-store btn-store-secondary" style="font-size: 13px; width: 100%; text-decoration: none; display: block; text-align: center;">Ver Mis Pedidos</a>
-                    </div>
-                <?php else: ?>
-                    <div style="background: var(--color-surface); padding: 24px; border-radius: 12px; border: 1px solid var(--color-border); text-align: center;">
-                        <div style="color: #008060; margin-bottom: 10px;">
-                            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
-                                <polyline points="22 4 12 14.01 9 11.01"></polyline>
-                            </svg>
-                        </div>
-                        <h4 style="font-size: 15px; font-weight: 700; margin-bottom: 6px;">Opiniones Verificadas</h4>
-                        <p style="font-size: 13px; color: var(--color-text-light); line-height: 1.5; margin-bottom: 16px;">
-                            Para garantizar la autenticidad, únicamente clientes registrados que compraron este producto pueden dejar una opinión.
-                        </p>
-                        <a href="<?= $baseUrl ?>/login" class="btn-store btn-store-primary" style="font-size: 13px; width: 100%; text-decoration: none; display: block; text-align: center;">Iniciar Sesión</a>
-                    </div>
-                <?php endif; ?>
-            </div>
-        </div>
-        </div>
-    </section>
-    <?php $prodBuiltIn['product_reviews'] = ob_get_clean(); ?>
 
     <!-- HOOK PARA SECCIONES AL PIE DE PRODUCTO (Related Products, etc.) -->
     <?php ob_start(); ?>

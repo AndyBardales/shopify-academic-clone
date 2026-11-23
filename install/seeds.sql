@@ -23,6 +23,7 @@ INSERT INTO `{prefix}settings` (`setting_key`, `setting_value`) VALUES
 ('order_min_amount', '0'),
 ('order_prefix', '#ORD-'),
 ('reviews_auto_approve', '1'),
+('reviews_window_days', '90'),
 ('allow_backorder', '0'),
 ('announcement_enabled', '0'),
 ('announcement_bg', '#008060'),

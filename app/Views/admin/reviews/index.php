@@ -277,6 +277,12 @@ $buildReviewUrl = function(array $overrides = []) use ($baseUrl, $statusFilter, 
                                 </div>
                                 <div style="font-size: 12px; color: var(--color-text-secondary);">
                                     Por <strong><?= htmlspecialchars($r['customer_name']) ?></strong> (<?= htmlspecialchars($r['customer_email']) ?>) · <?= date('d/m/Y H:i', strtotime($r['created_at'])) ?>
+                                    <?php if (!empty($r['order_number'])): ?>
+                                        · Pedido <strong><?= htmlspecialchars($r['order_number']) ?></strong>
+                                    <?php endif; ?>
+                                    <?php if (!empty($r['updated_at'])): ?>
+                                        · <span style="color: #047857; font-weight: 600;">Editada el <?= date('d/m/Y', strtotime($r['updated_at'])) ?></span>
+                                    <?php endif; ?>
                                 </div>
                             </div>
 
@@ -313,6 +319,16 @@ $buildReviewUrl = function(array $overrides = []) use ($baseUrl, $statusFilter, 
                         <p style="font-size: 13px; color: #374151; line-height: 1.55; margin: 0 0 12px;">
                             <?= nl2br(htmlspecialchars($r['comment'])) ?>
                         </p>
+                        <?php if (!empty($r['followup_comment'])): ?>
+                            <div style="background: #F8FAFC; border-left: 3px solid #2563EB; border-radius: 6px; padding: 9px 12px; margin-bottom: 12px;">
+                                <div style="font-size: 11px; font-weight: 700; color: #1D4ED8; margin-bottom: 2px;">
+                                    Comentario adicional tras el uso<?= !empty($r['followup_at']) ? ' · ' . date('d/m/Y H:i', strtotime($r['followup_at'])) : '' ?>
+                                </div>
+                                <div style="font-size: 12.5px; color: #334155; line-height: 1.5;">
+                                    <?= nl2br(htmlspecialchars($r['followup_comment'])) ?>
+                                </div>
+                            </div>
+                        <?php endif; ?>
 
                         <!-- RESPUESTA OFICIAL EXISTENTE -->
                         <?php if ($hasReply): ?>

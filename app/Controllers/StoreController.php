@@ -155,7 +155,14 @@ class StoreController {
         }
 
         // Reseñas aprobadas (destacadas primero)
-        $reviews = Database::fetchAll("SELECT * FROM " . Database::table('reviews') . " WHERE product_id = ? AND status = 'approved' ORDER BY is_featured DESC, id DESC", [$product['id']]);
+        StorefrontExperience::ensureReviewsSchema();
+        $reviews = Database::fetchAll("
+            SELECT r.*, o.order_number
+            FROM " . Database::table('reviews') . " r
+            LEFT JOIN " . Database::table('orders') . " o ON r.order_id = o.id
+            WHERE r.product_id = ? AND r.status = 'approved'
+            ORDER BY r.is_featured DESC, r.id DESC
+        ", [$product['id']]);
         
         $avgRating = 0;
         if (!empty($reviews)) {
@@ -1220,13 +1227,59 @@ class StoreController {
         unset($order);
 
         // Reseñas hechas por el cliente (excluir las deshabilitadas/ocultas)
+        StorefrontExperience::ensureReviewsSchema();
         $reviews = Database::fetchAll("
-            SELECT r.*, p.name as product_name, p.slug as product_slug
+            SELECT r.*, p.name as product_name, p.slug as product_slug, o.order_number, o.status as order_status, o.updated_at as order_updated_at, o.created_at as order_created_at
             FROM " . Database::table('reviews') . " r
             INNER JOIN " . Database::table('products') . " p ON r.product_id = p.id
-            WHERE r.customer_email = ? AND r.status != 'hidden'
+            LEFT JOIN " . Database::table('orders') . " o ON r.order_id = o.id
+            WHERE (r.customer_id = ? OR LOWER(r.customer_email) = LOWER(?)) AND r.status != 'hidden'
             ORDER BY r.id DESC
-        ", [$customer['email']]);
+        ", [(int)$customer['id'], $customer['email']]);
+
+        $windowDays = StorefrontExperience::getReviewsWindowDays();
+        $revByOrderProd = [];
+        $legacyByProd = [];
+        foreach ($reviews as &$revRow) {
+            $oid = !empty($revRow['order_id']) ? (int)$revRow['order_id'] : 0;
+            $pid = (int)$revRow['product_id'];
+            $deliveredAt = $oid > 0
+                ? StorefrontExperience::getOrderDeliveredAt($oid, (string)($revRow['order_updated_at'] ?: $revRow['order_created_at']))
+                : (string)$revRow['created_at'];
+            $win = StorefrontExperience::isWithinReviewWindow($deliveredAt, $windowDays);
+            $revRow['can_edit'] = !empty($win['allowed']);
+            $revRow['can_followup'] = !empty($win['allowed']) && trim((string)($revRow['followup_comment'] ?? '')) === '';
+            $revRow['days_left'] = $win['days_left'];
+            if ($oid > 0) {
+                $revByOrderProd[$oid . ':' . $pid] = $revRow;
+            } else {
+                $legacyByProd[$pid][] = $revRow;
+            }
+        }
+        unset($revRow);
+
+        foreach ($orders as &$ordRef) {
+            $ordId = (int)$ordRef['id'];
+            $isDelivered = in_array((string)$ordRef['status'], ['delivered', 'completed'], true);
+            $ordWin = ['allowed' => false, 'days_left' => 0];
+            if ($isDelivered) {
+                $dAt = StorefrontExperience::getOrderDeliveredAt($ordId, (string)($ordRef['updated_at'] ?: $ordRef['created_at']));
+                $ordWin = StorefrontExperience::isWithinReviewWindow($dAt, $windowDays);
+            }
+            foreach ($ordRef['items'] as &$itRef) {
+                $pid = (int)($itRef['product_id'] ?? 0);
+                $matchedRev = $revByOrderProd[$ordId . ':' . $pid] ?? null;
+                if (!$matchedRev && $isDelivered && !empty($legacyByProd[$pid])) {
+                    $matchedRev = array_shift($legacyByProd[$pid]);
+                }
+                $itRef['review'] = $matchedRev;
+                $itRef['can_review'] = ($isDelivered && $pid > 0 && !$matchedRev && !empty($ordWin['allowed']));
+                $itRef['review_window_expired'] = ($isDelivered && $pid > 0 && !$matchedRev && empty($ordWin['allowed']));
+                $itRef['review_days_left'] = $ordWin['days_left'];
+            }
+            unset($itRef);
+        }
+        unset($ordRef);
 
         $flashSuccess = $_SESSION['flash_success'] ?? null;
         $flashError = $_SESSION['flash_error'] ?? null;
@@ -1408,6 +1461,50 @@ class StoreController {
     // ==========================================
     // RESEÑAS VERIFICADAS DE CLIENTES
     // ==========================================
+    private function resolveReviewRedirect(int $productId, string $returnTo = ''): string {
+        $baseUrl = defined('APP_URL') ? APP_URL : '';
+        if ($returnTo === '/account') {
+            return $baseUrl . '/account';
+        }
+        $product = Database::fetch("SELECT slug FROM " . Database::table('products') . " WHERE id = ?", [$productId]);
+        if ($product && !empty($product['slug'])) {
+            return $baseUrl . '/product/' . $product['slug'];
+        }
+        return $baseUrl . '/account';
+    }
+
+    private function verifyEditableCustomerReview(int $reviewId, array $customer): array {
+        StorefrontExperience::ensureReviewsSchema();
+        $review = Database::fetch("
+            SELECT r.*, o.status as order_status, o.updated_at as order_updated_at, o.created_at as order_created_at
+            FROM " . Database::table('reviews') . " r
+            LEFT JOIN " . Database::table('orders') . " o ON r.order_id = o.id
+            WHERE r.id = ?
+              AND (r.customer_id = ? OR LOWER(r.customer_email) = LOWER(?))
+              AND r.status != 'hidden'
+        ", [$reviewId, (int)$customer['id'], (string)$customer['email']]);
+
+        if (!$review) {
+            return ['ok' => false, 'error' => 'No se encontró la reseña solicitada en tu cuenta.', 'review' => null];
+        }
+
+        $windowDays = StorefrontExperience::getReviewsWindowDays();
+        $oid = !empty($review['order_id']) ? (int)$review['order_id'] : 0;
+        if ($oid > 0 && !in_array((string)($review['order_status'] ?? ''), ['delivered', 'completed'], true)) {
+            return ['ok' => false, 'error' => 'Solo se pueden modificar reseñas de pedidos entregados.', 'review' => $review];
+        }
+
+        $deliveredAt = $oid > 0
+            ? StorefrontExperience::getOrderDeliveredAt($oid, (string)($review['order_updated_at'] ?: $review['order_created_at']))
+            : (string)$review['created_at'];
+        $win = StorefrontExperience::isWithinReviewWindow($deliveredAt, $windowDays);
+        if (empty($win['allowed'])) {
+            return ['ok' => false, 'error' => "El plazo máximo de {$windowDays} días para modificar esta reseña ya expiró.", 'review' => $review];
+        }
+
+        return ['ok' => true, 'error' => null, 'review' => $review];
+    }
+
     public function submitVerifiedReview(): void {
         if (!\ShopCMS\Core\Auth::isCustomer()) {
             $_SESSION['flash_error'] = "Debes iniciar sesión para publicar una reseña.";
@@ -1415,23 +1512,66 @@ class StoreController {
             exit;
         }
 
+        StorefrontExperience::ensureReviewsSchema();
         $customer = \ShopCMS\Core\Auth::customer();
+        $customerId = (int)$customer['id'];
+        $customerEmail = (string)$customer['email'];
         $productId = (int)($_POST['product_id'] ?? 0);
+        $requestedOrderId = (int)($_POST['order_id'] ?? 0);
         $rating = max(1, min(5, (int)($_POST['rating'] ?? 5)));
-        $title = trim($_POST['title'] ?? 'Opinión de comprador');
-        $comment = trim($_POST['comment'] ?? '');
+        $comment = trim((string)($_POST['comment'] ?? ''));
+        $returnTo = trim((string)($_POST['return_to'] ?? ''));
 
-        if (!$productId || empty($comment)) {
-            $_SESSION['flash_error'] = "Por favor ingresa un comentario con tu experiencia.";
-            header('Location: ' . (defined('APP_URL') ? APP_URL : '') . '/account');
+        if ($productId <= 0 || $comment === '') {
+            $_SESSION['flash_error'] = "Por favor ingresa tu calificación y descripción de experiencia.";
+            header('Location: ' . $this->resolveReviewRedirect($productId, $returnTo));
             exit;
         }
 
-        // Validar que efectivamente haya comprado el producto
-        if (!\ShopCMS\Core\Auth::hasPurchasedProduct((int)$customer['id'], $productId)) {
-            $_SESSION['flash_error'] = "Solo los clientes con compra verificada de este producto pueden calificarlo.";
-            header('Location: ' . (defined('APP_URL') ? APP_URL : '') . '/catalog');
-            exit;
+        $ctx = StorefrontExperience::getCustomerProductReviewContext($customerId, $customerEmail, $productId);
+        $targetOrder = null;
+        if ($requestedOrderId > 0) {
+            foreach ($ctx['reviewable_orders'] as $ro) {
+                if ((int)$ro['id'] === $requestedOrderId) {
+                    $targetOrder = $ro;
+                    break;
+                }
+            }
+            if (!$targetOrder) {
+                $existingOrder = Database::fetch("
+                    SELECT o.id, o.status
+                    FROM " . Database::table('orders') . " o
+                    INNER JOIN " . Database::table('order_items') . " oi ON oi.order_id = o.id
+                    WHERE o.id = ? AND oi.product_id = ?
+                      AND (o.customer_id = ? OR LOWER(o.customer_email) = LOWER(?))
+                    LIMIT 1
+                ", [$requestedOrderId, $productId, $customerId, $customerEmail]);
+                if (!$existingOrder) {
+                    $_SESSION['flash_error'] = "Solo puedes calificar productos incluidos en tus pedidos entregados.";
+                } elseif (!in_array((string)$existingOrder['status'], ['delivered', 'completed'], true)) {
+                    $_SESSION['flash_error'] = "Solo puedes publicar una reseña cuando tu pedido esté marcado como Entregado.";
+                } else {
+                    $_SESSION['flash_error'] = "Esta compra ya cuenta con una reseña registrada o superó el plazo permitido.";
+                }
+                header('Location: ' . $this->resolveReviewRedirect($productId, $returnTo));
+                exit;
+            }
+        } else {
+            if (!empty($ctx['reviewable_orders'])) {
+                $targetOrder = $ctx['reviewable_orders'][0];
+            } else {
+                if (!empty($ctx['pending_orders_in_transit'])) {
+                    $_SESSION['flash_error'] = "Tu pedido aún no ha sido entregado. Podrás calificar cuando su estado sea Entregado.";
+                } elseif (!empty($ctx['expired_unreviewed_orders'])) {
+                    $_SESSION['flash_error'] = "El plazo máximo de {$ctx['window_days']} días para calificar esta compra ha finalizado.";
+                } elseif (!empty($ctx['customer_reviews'])) {
+                    $_SESSION['flash_error'] = "Ya publicaste una reseña para tu compra entregada. Puedes editarla o añadir un comentario adicional.";
+                } else {
+                    $_SESSION['flash_error'] = "Solo los clientes con pedido entregado de este producto pueden calificarlo.";
+                }
+                header('Location: ' . $this->resolveReviewRedirect($productId, $returnTo));
+                exit;
+            }
         }
 
         $autoApprove = Settings::getBool('reviews_auto_approve', true);
@@ -1439,10 +1579,12 @@ class StoreController {
 
         Database::insert('reviews', [
             'product_id' => $productId,
+            'order_id' => (int)$targetOrder['id'],
+            'customer_id' => $customerId,
             'customer_name' => $customer['name'],
-            'customer_email' => $customer['email'],
+            'customer_email' => $customerEmail,
             'rating' => $rating,
-            'title' => $title,
+            'title' => null,
             'comment' => $comment,
             'status' => $reviewStatus
         ]);
@@ -1451,12 +1593,91 @@ class StoreController {
             ? "¡Muchas gracias! Tu opinión verificada ha sido publicada correctamente."
             : "¡Muchas gracias! Tu opinión verificada fue recibida y está pendiente de moderación.";
 
-        $product = Database::fetch("SELECT slug FROM " . Database::table('products') . " WHERE id = ?", [$productId]);
-        if ($product) {
-            header('Location: ' . (defined('APP_URL') ? APP_URL : '') . '/product/' . $product['slug']);
-        } else {
-            header('Location: ' . (defined('APP_URL') ? APP_URL : '') . '/account');
+        header('Location: ' . $this->resolveReviewRedirect($productId, $returnTo));
+        exit;
+    }
+
+    public function updateVerifiedReview(string $id): void {
+        if (!\ShopCMS\Core\Auth::isCustomer()) {
+            header('Location: ' . (defined('APP_URL') ? APP_URL : '') . '/login');
+            exit;
         }
+        $customer = \ShopCMS\Core\Auth::customer();
+        $reviewId = (int)$id;
+        $returnTo = trim((string)($_POST['return_to'] ?? ''));
+
+        $check = $this->verifyEditableCustomerReview($reviewId, $customer);
+        if (!$check['ok']) {
+            $_SESSION['flash_error'] = $check['error'];
+            $pid = (int)($check['review']['product_id'] ?? 0);
+            header('Location: ' . $this->resolveReviewRedirect($pid, $returnTo));
+            exit;
+        }
+
+        $review = $check['review'];
+        $pid = (int)$review['product_id'];
+        $rating = max(1, min(5, (int)($_POST['rating'] ?? $review['rating'])));
+        $comment = trim((string)($_POST['comment'] ?? ''));
+
+        if ($comment === '') {
+            $_SESSION['flash_error'] = "El comentario de la reseña no puede quedar vacío.";
+            header('Location: ' . $this->resolveReviewRedirect($pid, $returnTo));
+            exit;
+        }
+
+        $autoApprove = Settings::getBool('reviews_auto_approve', true);
+        Database::update('reviews', [
+            'rating' => $rating,
+            'title' => null,
+            'comment' => $comment,
+            'status' => $autoApprove ? 'approved' : 'pending',
+            'updated_at' => date('Y-m-d H:i:s'),
+        ], "id = :id", ['id' => $reviewId]);
+
+        $_SESSION['flash_success'] = "Tu reseña ha sido actualizada correctamente.";
+        header('Location: ' . $this->resolveReviewRedirect($pid, $returnTo));
+        exit;
+    }
+
+    public function addReviewFollowup(string $id): void {
+        if (!\ShopCMS\Core\Auth::isCustomer()) {
+            header('Location: ' . (defined('APP_URL') ? APP_URL : '') . '/login');
+            exit;
+        }
+        $customer = \ShopCMS\Core\Auth::customer();
+        $reviewId = (int)$id;
+        $returnTo = trim((string)($_POST['return_to'] ?? ''));
+
+        $check = $this->verifyEditableCustomerReview($reviewId, $customer);
+        if (!$check['ok']) {
+            $_SESSION['flash_error'] = $check['error'];
+            $pid = (int)($check['review']['product_id'] ?? 0);
+            header('Location: ' . $this->resolveReviewRedirect($pid, $returnTo));
+            exit;
+        }
+
+        $review = $check['review'];
+        $pid = (int)$review['product_id'];
+        if (trim((string)($review['followup_comment'] ?? '')) !== '') {
+            $_SESSION['flash_error'] = "Ya añadiste un comentario adicional para esta reseña.";
+            header('Location: ' . $this->resolveReviewRedirect($pid, $returnTo));
+            exit;
+        }
+
+        $followup = trim((string)($_POST['followup_comment'] ?? ''));
+        if ($followup === '') {
+            $_SESSION['flash_error'] = "Escribe tu comentario adicional antes de enviarlo.";
+            header('Location: ' . $this->resolveReviewRedirect($pid, $returnTo));
+            exit;
+        }
+
+        Database::update('reviews', [
+            'followup_comment' => $followup,
+            'followup_at' => date('Y-m-d H:i:s'),
+        ], "id = :id", ['id' => $reviewId]);
+
+        $_SESSION['flash_success'] = "Tu comentario adicional fue publicado sin alterar tu reseña original.";
+        header('Location: ' . $this->resolveReviewRedirect($pid, $returnTo));
         exit;
     }
 

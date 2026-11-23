@@ -218,14 +218,62 @@ $steps = OrderWorkflow::trackingSteps();
                                                     </div>
                                                 </div>
 
-                                                <div>
-                                                    <?php if (!empty($item['product_slug'])): ?>
-                                                        <a href="<?= $baseUrl ?>/product/<?= htmlspecialchars($item['product_slug']) ?>" class="btn-store btn-store-secondary" style="font-size: 12px; padding: 5px 11px; display: inline-flex; align-items: center; gap: 5px; text-decoration: none;">
+                                                <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 6px;">
+                                                    <?php if (!empty($item['can_review'])): ?>
+                                                        <button type="button"
+                                                                class="btn-store btn-store-primary"
+                                                                style="font-size: 12px; padding: 5px 11px; display: inline-flex; align-items: center; gap: 5px;"
+                                                                data-mode="create"
+                                                                data-product-id="<?= (int)($item['product_id'] ?? 0) ?>"
+                                                                data-order-id="<?= (int)$ord['id'] ?>"
+                                                                data-product-name="<?= htmlspecialchars((string)($item['product_name'] ?? ''), ENT_QUOTES) ?>"
+                                                                data-order-number="<?= htmlspecialchars((string)($ord['order_number'] ?? ''), ENT_QUOTES) ?>"
+                                                                onclick="openAccountReviewModal(this)">
                                                             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                                                 <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
                                                             </svg>
                                                             <span>Calificar Producto</span>
-                                                        </a>
+                                                        </button>
+                                                    <?php elseif (!empty($item['review'])):
+                                                        $ir = $item['review'];
+                                                    ?>
+                                                        <span style="font-size: 11.5px; color: #166534; background: #DCFCE7; padding: 3px 8px; border-radius: 999px; font-weight: 600;">
+                                                            Calificado (<?= (int)$ir['rating'] ?>/5)
+                                                        </span>
+                                                        <?php if (!empty($ir['can_edit'])): ?>
+                                                            <button type="button"
+                                                                    class="btn-store btn-store-secondary"
+                                                                    style="font-size: 11.5px; padding: 4px 10px;"
+                                                                    data-mode="edit"
+                                                                    data-review-id="<?= (int)$ir['id'] ?>"
+                                                                    data-rating="<?= (int)$ir['rating'] ?>"
+                                                                    data-comment="<?= htmlspecialchars((string)($ir['comment'] ?? ''), ENT_QUOTES) ?>"
+                                                                    data-product-name="<?= htmlspecialchars((string)($item['product_name'] ?? ''), ENT_QUOTES) ?>"
+                                                                    data-order-number="<?= htmlspecialchars((string)($ord['order_number'] ?? ''), ENT_QUOTES) ?>"
+                                                                    onclick="openAccountReviewModal(this)">
+                                                                Editar reseña
+                                                            </button>
+                                                        <?php endif; ?>
+                                                        <?php if (!empty($ir['can_followup'])): ?>
+                                                            <button type="button"
+                                                                    class="btn-store btn-store-secondary"
+                                                                    style="font-size: 11.5px; padding: 4px 10px;"
+                                                                    data-mode="followup"
+                                                                    data-review-id="<?= (int)$ir['id'] ?>"
+                                                                    data-product-name="<?= htmlspecialchars((string)($item['product_name'] ?? ''), ENT_QUOTES) ?>"
+                                                                    data-order-number="<?= htmlspecialchars((string)($ord['order_number'] ?? ''), ENT_QUOTES) ?>"
+                                                                    onclick="openAccountReviewModal(this)">
+                                                                Añadir comentario adicional
+                                                            </button>
+                                                        <?php endif; ?>
+                                                    <?php elseif (!empty($item['review_window_expired'])): ?>
+                                                        <span style="font-size: 11.5px; color: var(--color-text-light); background: var(--color-surface); border: 1px solid var(--color-border); padding: 4px 9px; border-radius: 6px;">
+                                                            Plazo de reseña cerrado
+                                                        </span>
+                                                    <?php elseif (!in_array((string)$ord['status'], ['cancelled', 'returned', 'delivered', 'completed'], true)): ?>
+                                                        <span style="font-size: 11.5px; color: var(--color-text-light); background: var(--color-surface); border: 1px solid var(--color-border); padding: 4px 9px; border-radius: 6px;">
+                                                            Podrás opinar al entregarse
+                                                        </span>
                                                     <?php endif; ?>
                                                 </div>
                                             </div>
@@ -329,32 +377,90 @@ $steps = OrderWorkflow::trackingSteps();
             <div style="background: #FFF; border-radius: 12px; border: 1px solid var(--color-border); padding: 24px;">
                 <h2 style="font-size: 18px; font-weight: 700; margin: 0 0 18px;">Mis Reseñas Publicadas (<?= count($reviews) ?>)</h2>
                 <?php if (empty($reviews)): ?>
-                    <p style="font-size: 14px; color: var(--color-text-light); margin: 0;">Todavía no has calificado ningún producto comprado.</p>
+                    <p style="font-size: 14px; color: var(--color-text-light); margin: 0;">Todavía no has calificado ningún producto entregado.</p>
                 <?php else: ?>
                     <div style="display: flex; flex-direction: column; gap: 14px;">
-                        <?php foreach ($reviews as $rev): ?>
+                        <?php foreach ($reviews as $rev):
+                            $isRevEdited = !empty($rev['updated_at']);
+                            $revFollowup = trim((string)($rev['followup_comment'] ?? ''));
+                        ?>
                             <div style="border: 1px solid var(--color-border); border-radius: 8px; padding: 14px 16px;">
-                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-                                    <a href="<?= $baseUrl ?>/product/<?= htmlspecialchars($rev['product_slug']) ?>" style="font-weight: 700; font-size: 13px; color: #008060; text-decoration: none;">
-                                        <?= htmlspecialchars($rev['product_name']) ?>
-                                    </a>
-                                    <span style="font-size: 11px; color: var(--color-text-light);"><?= date('d/m/Y', strtotime($rev['created_at'])) ?></span>
+                                <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 6px; margin-bottom: 6px;">
+                                    <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                                        <a href="<?= $baseUrl ?>/product/<?= htmlspecialchars((string)$rev['product_slug']) ?>" style="font-weight: 700; font-size: 13px; color: var(--color-primary, #008060); text-decoration: none;">
+                                            <?= htmlspecialchars((string)$rev['product_name']) ?>
+                                        </a>
+                                        <?php if (!empty($rev['order_number'])): ?>
+                                            <span style="font-size: 11px; color: var(--color-text-light); background: var(--color-surface); border: 1px solid var(--color-border); padding: 1px 6px; border-radius: 4px;">
+                                                Pedido <?= htmlspecialchars((string)$rev['order_number']) ?>
+                                            </span>
+                                        <?php endif; ?>
+                                        <?php if ($isRevEdited): ?>
+                                            <span style="font-size: 10.5px; color: var(--color-text-light); background: var(--color-surface); border: 1px solid var(--color-border); padding: 1px 6px; border-radius: 4px; font-weight: 600;">
+                                                Editada
+                                            </span>
+                                        <?php endif; ?>
+                                    </div>
+                                    <span style="font-size: 11px; color: var(--color-text-light);"><?= date('d/m/Y', strtotime((string)$rev['created_at'])) ?></span>
                                 </div>
-                                <div style="display: flex; gap: 2px; margin-bottom: 6px;">
+                                <div style="display: flex; gap: 2px; margin-bottom: 8px;">
                                     <?php for ($s = 1; $s <= 5; $s++): ?>
-                                        <svg width="13" height="13" viewBox="0 0 24 24" fill="<?= $s <= $rev['rating'] ? '#F59E0B' : '#E5E7EB' ?>" stroke="<?= $s <= $rev['rating'] ? '#F59E0B' : '#D1D5DB' ?>" stroke-width="1.5">
+                                        <svg width="13" height="13" viewBox="0 0 24 24" fill="<?= $s <= (int)$rev['rating'] ? '#F59E0B' : '#E5E7EB' ?>" stroke="<?= $s <= (int)$rev['rating'] ? '#F59E0B' : '#D1D5DB' ?>" stroke-width="1.5">
                                             <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
                                         </svg>
                                     <?php endfor; ?>
-                                    <span style="font-size: 12px; font-weight: 600; margin-left: 6px;"><?= htmlspecialchars($rev['title'] ?: 'Opinión') ?></span>
                                 </div>
-                                <p style="font-size: 13px; color: var(--color-text); margin: 0; line-height: 1.5;"><?= htmlspecialchars($rev['comment']) ?></p>
+                                <p style="font-size: 13px; color: var(--color-text); margin: 0; line-height: 1.5;"><?= nl2br(htmlspecialchars((string)$rev['comment'])) ?></p>
+
+                                <?php if ($revFollowup !== ''): ?>
+                                    <div style="margin-top: 8px; padding: 8px 10px; background: var(--color-surface, #F8FAFC); border-left: 3px solid var(--color-primary, #008060); border-radius: 4px; font-size: 12.5px;">
+                                        <strong style="color: var(--color-primary, #008060); display: block; font-size: 11px; margin-bottom: 2px;">
+                                            Comentario adicional<?= !empty($rev['followup_at']) ? ' · ' . date('d/m/Y', strtotime((string)$rev['followup_at'])) : '' ?>
+                                        </strong>
+                                        <?= nl2br(htmlspecialchars($revFollowup)) ?>
+                                    </div>
+                                <?php endif; ?>
+
                                 <?php if (!empty($rev['admin_reply'])): ?>
                                     <div style="margin-top: 8px; padding: 8px 10px; background: #F3F4F6; border-left: 3px solid #008060; border-radius: 4px; font-size: 12px;">
                                         <strong style="color: #008060; display: block;">Respuesta de la tienda:</strong>
-                                        <?= nl2br(htmlspecialchars($rev['admin_reply'])) ?>
+                                        <?= nl2br(htmlspecialchars((string)$rev['admin_reply'])) ?>
                                     </div>
                                 <?php endif; ?>
+
+                                <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 10px;">
+                                    <?php if (!empty($rev['can_edit'])): ?>
+                                        <button type="button"
+                                                class="btn-store btn-store-secondary"
+                                                style="font-size: 11.5px; padding: 4px 10px;"
+                                                data-mode="edit"
+                                                data-review-id="<?= (int)$rev['id'] ?>"
+                                                data-rating="<?= (int)$rev['rating'] ?>"
+                                                data-comment="<?= htmlspecialchars((string)$rev['comment'], ENT_QUOTES) ?>"
+                                                data-product-name="<?= htmlspecialchars((string)$rev['product_name'], ENT_QUOTES) ?>"
+                                                data-order-number="<?= htmlspecialchars((string)($rev['order_number'] ?? ''), ENT_QUOTES) ?>"
+                                                onclick="openAccountReviewModal(this)">
+                                            Editar reseña
+                                        </button>
+                                    <?php endif; ?>
+                                    <?php if (!empty($rev['can_followup'])): ?>
+                                        <button type="button"
+                                                class="btn-store btn-store-secondary"
+                                                style="font-size: 11.5px; padding: 4px 10px;"
+                                                data-mode="followup"
+                                                data-review-id="<?= (int)$rev['id'] ?>"
+                                                data-product-name="<?= htmlspecialchars((string)$rev['product_name'], ENT_QUOTES) ?>"
+                                                data-order-number="<?= htmlspecialchars((string)($rev['order_number'] ?? ''), ENT_QUOTES) ?>"
+                                                onclick="openAccountReviewModal(this)">
+                                            Añadir comentario adicional
+                                        </button>
+                                    <?php endif; ?>
+                                    <?php if (empty($rev['can_edit'])): ?>
+                                        <span style="font-size: 11px; color: var(--color-text-light);">Plazo de edición finalizado</span>
+                                    <?php elseif (!empty($rev['days_left'])): ?>
+                                        <span style="font-size: 11px; color: var(--color-text-light);">Quedan <?= (int)$rev['days_left'] ?> días para editar</span>
+                                    <?php endif; ?>
+                                </div>
                             </div>
                         <?php endforeach; ?>
                     </div>
@@ -504,6 +610,119 @@ function copyTrackingCode(code, btn) {
     btn.textContent = 'Copiado';
     setTimeout(function() { btn.textContent = prev; }, 1400);
 }
+
+function openAccountReviewModal(btn) {
+    const modal = document.getElementById('scms_account_review_modal');
+    const form = document.getElementById('scms_account_review_form');
+    if (!modal || !form || !btn) return;
+    const mode = btn.getAttribute('data-mode') || 'create';
+    const base = <?= json_encode($baseUrl) ?>;
+    const prodName = btn.getAttribute('data-product-name') || 'Producto';
+    const ordNum = btn.getAttribute('data-order-number') || '';
+    const titleEl = document.getElementById('scms_arm_title');
+    const subEl = document.getElementById('scms_arm_sub');
+    const ratingGroup = document.getElementById('scms_arm_rating_group');
+    const commentGroup = document.getElementById('scms_arm_comment_group');
+    const followupGroup = document.getElementById('scms_arm_followup_group');
+    const prodInput = document.getElementById('scms_arm_product_id');
+    const orderInput = document.getElementById('scms_arm_order_id');
+    const ratingEl = document.getElementById('scms_arm_rating');
+    const commentEl = document.getElementById('scms_arm_comment');
+    const followupEl = document.getElementById('scms_arm_followup');
+    const submitBtn = document.getElementById('scms_arm_submit');
+
+    subEl.textContent = prodName + (ordNum ? ' · Pedido ' + ordNum : '');
+
+    if (mode === 'followup') {
+        const revId = btn.getAttribute('data-review-id');
+        form.action = base + '/account/review/followup/' + revId;
+        titleEl.textContent = 'Añadir comentario adicional';
+        ratingGroup.style.display = 'none';
+        commentGroup.style.display = 'none';
+        followupGroup.style.display = 'block';
+        commentEl.required = false;
+        followupEl.required = true;
+        followupEl.value = '';
+        submitBtn.textContent = 'Publicar Comentario Adicional';
+    } else if (mode === 'edit') {
+        const revId = btn.getAttribute('data-review-id');
+        form.action = base + '/account/review/update/' + revId;
+        titleEl.textContent = 'Editar tu reseña';
+        ratingGroup.style.display = 'block';
+        commentGroup.style.display = 'block';
+        followupGroup.style.display = 'none';
+        ratingEl.value = btn.getAttribute('data-rating') || '5';
+        commentEl.value = btn.getAttribute('data-comment') || '';
+        commentEl.required = true;
+        followupEl.required = false;
+        submitBtn.textContent = 'Guardar Cambios';
+    } else {
+        form.action = base + '/account/review';
+        titleEl.textContent = 'Calificar producto entregado';
+        ratingGroup.style.display = 'block';
+        commentGroup.style.display = 'block';
+        followupGroup.style.display = 'none';
+        prodInput.value = btn.getAttribute('data-product-id') || '0';
+        orderInput.value = btn.getAttribute('data-order-id') || '0';
+        ratingEl.value = '5';
+        commentEl.value = '';
+        commentEl.required = true;
+        followupEl.required = false;
+        submitBtn.textContent = 'Publicar Opinión';
+    }
+
+    modal.style.display = 'flex';
+}
+
+function closeAccountReviewModal() {
+    const modal = document.getElementById('scms_account_review_modal');
+    if (modal) modal.style.display = 'none';
+}
 </script>
+
+<div id="scms_account_review_modal" style="display: none; position: fixed; inset: 0; z-index: 9999; background: rgba(15, 23, 42, 0.55); align-items: center; justify-content: center; padding: 16px;" onclick="if(event.target===this) closeAccountReviewModal();">
+    <div style="background: var(--color-bg, #FFF); border: 1px solid var(--color-border); border-radius: 12px; width: 100%; max-width: 460px; padding: 22px; box-shadow: 0 20px 45px rgba(0,0,0,0.18);">
+        <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 14px;">
+            <div>
+                <h3 id="scms_arm_title" style="margin: 0 0 4px; font-size: 17px; font-weight: 700; color: var(--color-text);">Calificar producto</h3>
+                <div id="scms_arm_sub" style="font-size: 12.5px; color: var(--color-text-light);"></div>
+            </div>
+            <button type="button" onclick="closeAccountReviewModal()" style="background: none; border: none; font-size: 20px; line-height: 1; color: var(--color-text-light); cursor: pointer;" aria-label="Cerrar">&times;</button>
+        </div>
+
+        <form id="scms_account_review_form" method="POST" action="<?= $baseUrl ?>/account/review">
+            <?= \ShopCMS\Core\Security::csrfField() ?>
+            <input type="hidden" name="return_to" value="/account">
+            <input type="hidden" id="scms_arm_product_id" name="product_id" value="0">
+            <input type="hidden" id="scms_arm_order_id" name="order_id" value="0">
+
+            <div id="scms_arm_rating_group" style="margin-bottom: 12px;">
+                <label for="scms_arm_rating" style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 4px;">Calificación *</label>
+                <select id="scms_arm_rating" name="rating" style="width: 100%; padding: 8px 10px; border-radius: 6px; border: 1px solid var(--color-border); font-size: 13px;">
+                    <option value="5">5 de 5 estrellas - Excelente</option>
+                    <option value="4">4 de 5 estrellas - Bueno</option>
+                    <option value="3">3 de 5 estrellas - Regular</option>
+                    <option value="2">2 de 5 estrellas - Regular bajo</option>
+                    <option value="1">1 de 5 estrellas - Insatisfecho</option>
+                </select>
+            </div>
+
+            <div id="scms_arm_comment_group" style="margin-bottom: 16px;">
+                <label for="scms_arm_comment" style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 4px;">Descripción / Comentario *</label>
+                <textarea id="scms_arm_comment" name="comment" rows="4" placeholder="Cuéntale a otros compradores qué te pareció el producto..." style="width: 100%; padding: 9px 10px; border-radius: 6px; border: 1px solid var(--color-border); font-family: inherit; font-size: 13px;"></textarea>
+            </div>
+
+            <div id="scms_arm_followup_group" style="display: none; margin-bottom: 16px;">
+                <label for="scms_arm_followup" style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 4px;">Comentario adicional después del uso *</label>
+                <textarea id="scms_arm_followup" name="followup_comment" rows="4" placeholder="Agrega detalles de durabilidad o experiencia tras recibirlo sin borrar tu reseña inicial..." style="width: 100%; padding: 9px 10px; border-radius: 6px; border: 1px solid var(--color-border); font-family: inherit; font-size: 13px;"></textarea>
+            </div>
+
+            <div style="display: flex; gap: 8px;">
+                <button type="submit" id="scms_arm_submit" class="btn-store btn-store-primary" style="flex: 1; padding: 9px 14px; font-size: 13.5px;">Publicar Opinión</button>
+                <button type="button" onclick="closeAccountReviewModal()" class="btn-store btn-store-secondary" style="padding: 9px 14px; font-size: 13.5px;">Cancelar</button>
+            </div>
+        </form>
+    </div>
+</div>
 
 <?php \ShopCMS\Core\ThemeManager::renderFooter(get_defined_vars()); ?>

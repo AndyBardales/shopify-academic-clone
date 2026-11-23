@@ -33,6 +33,7 @@ class Settings {
             'order_min_amount' => '0',
             'order_prefix' => '#ORD-',
             'reviews_auto_approve' => '1',
+            'reviews_window_days' => '90',
             'inventory_low_stock_notification' => '1',
             'inventory_low_stock_limit' => '5',
             'allow_backorder' => '0',

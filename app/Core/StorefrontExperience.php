@@ -274,6 +274,459 @@ class StorefrontExperience {
         }
     }
 
+    private static bool $reviewsSchemaEnsured = false;
+
+    /**
+     * Asegura columnas extendidas en reviews (order_id, customer_id, updated_at, followup_comment, followup_at).
+     */
+    public static function ensureReviewsSchema(): void {
+        if (self::$reviewsSchemaEnsured) {
+            return;
+        }
+        self::$reviewsSchemaEnsured = true;
+        try {
+            $table = Database::table('reviews');
+            $cols = array_column(Database::fetchAll("SHOW COLUMNS FROM {$table}"), 'Field');
+            if (!in_array('order_id', $cols, true)) {
+                Database::getInstance()->exec("ALTER TABLE {$table} ADD COLUMN `order_id` INT NULL AFTER `product_id`");
+            }
+            if (!in_array('customer_id', $cols, true)) {
+                Database::getInstance()->exec("ALTER TABLE {$table} ADD COLUMN `customer_id` INT NULL AFTER `order_id`");
+            }
+            if (!in_array('followup_comment', $cols, true)) {
+                Database::getInstance()->exec("ALTER TABLE {$table} ADD COLUMN `followup_comment` TEXT NULL AFTER `comment`");
+            }
+            if (!in_array('followup_at', $cols, true)) {
+                Database::getInstance()->exec("ALTER TABLE {$table} ADD COLUMN `followup_at` DATETIME NULL AFTER `followup_comment`");
+            }
+            if (!in_array('updated_at', $cols, true)) {
+                Database::getInstance()->exec("ALTER TABLE {$table} ADD COLUMN `updated_at` DATETIME NULL AFTER `is_featured`");
+            }
+        } catch (\Throwable $e) {
+        }
+    }
+
+    public static function getReviewsWindowDays(): int {
+        return max(0, (int)Settings::get('reviews_window_days', '90'));
+    }
+
+    public static function getOrderDeliveredAt(int $orderId, string $fallbackDatetime): string {
+        try {
+            $hist = Database::fetch("
+                SELECT created_at FROM " . Database::table('order_history') . "
+                WHERE order_id = ? AND status IN ('delivered', 'completed')
+                ORDER BY id DESC LIMIT 1
+            ", [$orderId]);
+            if ($hist && !empty($hist['created_at'])) {
+                return (string)$hist['created_at'];
+            }
+        } catch (\Throwable $e) {}
+        return $fallbackDatetime;
+    }
+
+    public static function isWithinReviewWindow(string $deliveredAt, ?int $windowDays = null): array {
+        $days = $windowDays ?? self::getReviewsWindowDays();
+        if ($days <= 0) {
+            return ['allowed' => true, 'days_left' => null, 'expires_at' => null];
+        }
+        $ts = strtotime($deliveredAt);
+        if (!$ts) {
+            return ['allowed' => true, 'days_left' => $days, 'expires_at' => null];
+        }
+        $expiresTs = $ts + ($days * 86400);
+        $now = time();
+        $allowed = ($now <= $expiresTs);
+        $daysLeft = $allowed ? max(1, (int)ceil(($expiresTs - $now) / 86400)) : 0;
+        return [
+            'allowed' => $allowed,
+            'days_left' => $daysLeft,
+            'expires_at' => date('Y-m-d H:i:s', $expiresTs),
+        ];
+    }
+
+    /**
+     * Obtiene el contexto de compras y reseñas de un cliente para un producto (1 reseña por compra entregada + plazo).
+     */
+    public static function getCustomerProductReviewContext(int $customerId, string $customerEmail, int $productId): array {
+        self::ensureReviewsSchema();
+        $empty = [
+            'reviewable_orders' => [],
+            'expired_unreviewed_orders' => [],
+            'pending_orders_in_transit' => [],
+            'customer_reviews' => [],
+            'window_days' => self::getReviewsWindowDays(),
+        ];
+        if ($customerId <= 0 || $productId <= 0) {
+            return $empty;
+        }
+
+        $windowDays = self::getReviewsWindowDays();
+        $orderRows = Database::fetchAll("
+            SELECT o.id, o.order_number, o.status, o.created_at, o.updated_at
+            FROM " . Database::table('orders') . " o
+            INNER JOIN " . Database::table('order_items') . " oi ON oi.order_id = o.id
+            WHERE (o.customer_id = ? OR LOWER(o.customer_email) = LOWER(?))
+              AND oi.product_id = ?
+              AND o.status NOT IN ('cancelled', 'returned')
+            GROUP BY o.id, o.order_number, o.status, o.created_at, o.updated_at
+            ORDER BY o.id DESC
+        ", [$customerId, $customerEmail, $productId]);
+
+        $reviewsRows = Database::fetchAll("
+            SELECT r.*, o.order_number
+            FROM " . Database::table('reviews') . " r
+            LEFT JOIN " . Database::table('orders') . " o ON r.order_id = o.id
+            WHERE r.product_id = ?
+              AND (r.customer_id = ? OR LOWER(r.customer_email) = LOWER(?))
+              AND r.status != 'hidden'
+            ORDER BY r.id DESC
+        ", [$productId, $customerId, $customerEmail]);
+
+        $revByOrderId = [];
+        $legacyReviews = [];
+        foreach ($reviewsRows as $r) {
+            $oid = !empty($r['order_id']) ? (int)$r['order_id'] : 0;
+            if ($oid > 0) {
+                $revByOrderId[$oid] = $r;
+            } else {
+                $legacyReviews[] = $r;
+            }
+        }
+
+        $deliveredOrdersMap = [];
+        $reviewableOrders = [];
+        $expiredUnreviewed = [];
+        $inTransit = [];
+
+        foreach ($orderRows as $o) {
+            $oid = (int)$o['id'];
+            $st = (string)$o['status'];
+            if (!in_array($st, ['delivered', 'completed'], true)) {
+                $inTransit[] = $o;
+                continue;
+            }
+
+            $deliveredAt = self::getOrderDeliveredAt($oid, (string)($o['updated_at'] ?: $o['created_at']));
+            $win = self::isWithinReviewWindow($deliveredAt, $windowDays);
+            $o['delivered_at'] = $deliveredAt;
+            $o['window'] = $win;
+            $deliveredOrdersMap[$oid] = $o;
+
+            if (isset($revByOrderId[$oid])) {
+                continue;
+            }
+            if (!empty($legacyReviews)) {
+                // Compatibilidad: reseña antigua creada antes de existir order_id
+                $rev = array_shift($legacyReviews);
+                $rev['order_id'] = $oid;
+                $rev['order_number'] = $o['order_number'];
+                $revByOrderId[$oid] = $rev;
+                continue;
+            }
+
+            if ($win['allowed']) {
+                $reviewableOrders[] = $o;
+            } else {
+                $expiredUnreviewed[] = $o;
+            }
+        }
+
+        $customerReviews = [];
+        foreach ($reviewsRows as $r) {
+            $oid = !empty($r['order_id']) ? (int)$r['order_id'] : 0;
+            $win = ['allowed' => true, 'days_left' => null, 'expires_at' => null];
+            if ($oid > 0 && isset($deliveredOrdersMap[$oid])) {
+                $win = $deliveredOrdersMap[$oid]['window'];
+            } else {
+                $win = self::isWithinReviewWindow((string)$r['created_at'], $windowDays);
+            }
+            $r['can_edit'] = !empty($win['allowed']);
+            $r['can_followup'] = !empty($win['allowed']) && trim((string)($r['followup_comment'] ?? '')) === '';
+            $r['days_left'] = $win['days_left'];
+            $customerReviews[] = $r;
+        }
+
+        return [
+            'reviewable_orders' => $reviewableOrders,
+            'expired_unreviewed_orders' => $expiredUnreviewed,
+            'pending_orders_in_transit' => $inTransit,
+            'customer_reviews' => $customerReviews,
+            'window_days' => $windowDays,
+        ];
+    }
+
+    /**
+     * Renderiza la sección unificada de reseñas verificadas, edición y comentario adicional para cualquier tema.
+     */
+    public static function renderProductReviewsSection(
+        array $product,
+        array $reviews,
+        string $baseUrl,
+        array $themeOpts = []
+    ): string {
+        self::ensureReviewsSchema();
+        $isCustomerLoggedIn = Auth::isCustomer();
+        $customerInfo = Auth::customer();
+        $prodId = (int)$product['id'];
+        $ctx = $isCustomerLoggedIn
+            ? self::getCustomerProductReviewContext((int)$customerInfo['id'], (string)$customerInfo['email'], $prodId)
+            : ['reviewable_orders' => [], 'expired_unreviewed_orders' => [], 'pending_orders_in_transit' => [], 'customer_reviews' => [], 'window_days' => self::getReviewsWindowDays()];
+
+        $sectionTitle = (string)($themeOpts['title'] ?? 'Opiniones de Clientes');
+        $starActiveColor = (string)($themeOpts['star_active'] ?? '#F59E0B');
+        $starEmptyColor = (string)($themeOpts['star_empty'] ?? '#E5E7EB');
+        $isSerif = !empty($themeOpts['serif']);
+        $isMono = !empty($themeOpts['mono']);
+        $useContainer = !array_key_exists('use_container', $themeOpts) || !empty($themeOpts['use_container']);
+
+        $titleStyle = $isSerif
+            ? 'font-family: var(--font-serif); font-size: 22px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase;'
+            : ($isMono
+                ? 'font-family: var(--font-mono); font-size: 18px; font-weight: 700; text-transform: uppercase;'
+                : 'font-size: 24px; font-weight: 700;');
+
+        ob_start();
+        ?>
+        <section data-theme-section="product_reviews" data-section-label="Reseñas de Clientes" style="padding: 36px 0; border-top: 2px solid var(--color-border);">
+            <?php if ($useContainer): ?><div class="container"><?php endif; ?>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; flex-wrap: wrap; gap: 10px;">
+                    <h2 style="<?= $titleStyle ?>" data-theme-field="title"><?= htmlspecialchars($sectionTitle) ?> (<?= count($reviews) ?>)</h2>
+                </div>
+
+                <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 36px;">
+                    <!-- LISTA PÚBLICA DE RESEÑAS -->
+                    <div>
+                        <?php if (empty($reviews)): ?>
+                            <p style="color: var(--color-text-light, var(--color-text-muted, #6B7280));">Aún no hay reseñas verificadas para este producto.</p>
+                        <?php else: ?>
+                            <?php foreach ($reviews as $rev): ?>
+                                <?php
+                                $isEdited = !empty($rev['updated_at']);
+                                $followup = trim((string)($rev['followup_comment'] ?? ''));
+                                ?>
+                                <div style="padding: 16px; border: 1px solid <?= !empty($rev['is_featured']) ? '#A7F3D0' : 'var(--color-border)' ?>; border-radius: 10px; margin-bottom: 16px; background: <?= !empty($rev['is_featured']) ? '#F9FEFC' : 'var(--color-bg, #FFF)' ?>;">
+                                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; flex-wrap: wrap; gap: 6px;">
+                                        <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                                            <div style="display: inline-flex; gap: 2px;">
+                                                <?php for ($s = 1; $s <= 5; $s++): ?>
+                                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="<?= $s <= (int)$rev['rating'] ? $starActiveColor : $starEmptyColor ?>" stroke="<?= $s <= (int)$rev['rating'] ? $starActiveColor : '#D1D5DB' ?>" stroke-width="1.5">
+                                                        <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
+                                                    </svg>
+                                                <?php endfor; ?>
+                                            </div>
+                                            <span style="display: inline-flex; align-items: center; gap: 4px; font-size: 11px; color: #166534; background: #DCFCE7; padding: 2px 8px; border-radius: 4px; font-weight: 600;">
+                                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                                                Compra Verificada
+                                            </span>
+                                            <?php if (!empty($rev['is_featured'])): ?>
+                                                <span style="font-size: 11px; color: #92400E; background: #FEF3C7; padding: 2px 8px; border-radius: 4px; font-weight: 700;">Destacada</span>
+                                            <?php endif; ?>
+                                            <?php if ($isEdited): ?>
+                                                <span style="font-size: 10.5px; color: var(--color-text-light, #6B7280); background: var(--color-surface, #F3F4F6); border: 1px solid var(--color-border, #E5E7EB); padding: 1px 6px; border-radius: 4px; font-weight: 600;">Editada</span>
+                                            <?php endif; ?>
+                                        </div>
+                                        <span style="font-size: 12px; color: var(--color-text-light, var(--color-text-muted, #6B7280));">
+                                            <?= date('d/m/Y', strtotime((string)$rev['created_at'])) ?>
+                                        </span>
+                                    </div>
+
+                                    <p style="font-size: 14px; color: var(--color-text); margin: 0 0 8px; line-height: 1.55;">
+                                        <?= nl2br(htmlspecialchars((string)$rev['comment'])) ?>
+                                    </p>
+
+                                    <?php if ($followup !== ''): ?>
+                                        <div style="margin: 10px 0 8px; padding: 10px 12px; background: var(--color-surface, #F8FAFC); border-left: 3px solid var(--color-primary, #008060); border-radius: 6px; font-size: 13px; color: var(--color-text);">
+                                            <div style="font-size: 11.5px; font-weight: 700; color: var(--color-primary, #008060); margin-bottom: 3px;">
+                                                Comentario adicional después de recibir el producto<?= !empty($rev['followup_at']) ? ' · ' . date('d/m/Y', strtotime((string)$rev['followup_at'])) : '' ?>
+                                            </div>
+                                            <?= nl2br(htmlspecialchars($followup)) ?>
+                                        </div>
+                                    <?php endif; ?>
+
+                                    <small style="color: var(--color-text-light, var(--color-text-muted, #6B7280));">
+                                        Por: <?= htmlspecialchars((string)($rev['customer_name'] ?? $rev['author_name'] ?? 'Cliente')) ?>
+                                    </small>
+
+                                    <?php if (!empty($rev['admin_reply'])): ?>
+                                        <div style="margin-top: 10px; padding: 10px 12px; background: var(--color-surface, #F3F4F6); border-left: 3px solid var(--color-primary, #008060); border-radius: 6px; font-size: 13px; color: var(--color-text);">
+                                            <strong style="display: block; font-size: 11.5px; color: var(--color-primary, #008060); margin-bottom: 3px;">Respuesta oficial de la tienda</strong>
+                                            <?= nl2br(htmlspecialchars((string)$rev['admin_reply'])) ?>
+                                        </div>
+                                    <?php endif; ?>
+                                </div>
+                            <?php endforeach; ?>
+                        <?php endif; ?>
+                    </div>
+
+                    <!-- PANEL INTERACTIVO DEL COMPRADOR -->
+                    <div>
+                        <?php if (!$isCustomerLoggedIn): ?>
+                            <div style="background: var(--color-surface, #FFF); padding: 24px; border-radius: 12px; border: 1px solid var(--color-border); text-align: center;">
+                                <h4 style="font-size: 15px; font-weight: 700; margin-bottom: 6px;">Opiniones Verificadas</h4>
+                                <p style="font-size: 13px; color: var(--color-text-light, #6B7280); line-height: 1.5; margin-bottom: 16px;">
+                                    Solo los clientes que han recibido este producto pueden publicar, editar o ampliar su opinión.
+                                </p>
+                                <a href="<?= htmlspecialchars($baseUrl) ?>/login" class="btn-store btn-store-primary" style="font-size: 13px; width: 100%; text-decoration: none; display: block; text-align: center;">Iniciar Sesión</a>
+                            </div>
+                        <?php else: ?>
+                            <?php if (!empty($ctx['reviewable_orders'])):
+                                $revOrders = $ctx['reviewable_orders'];
+                                $firstOrder = $revOrders[0];
+                            ?>
+                                <div style="background: var(--color-surface, #FFF); padding: 22px; border-radius: 12px; border: 1px solid var(--color-border); margin-bottom: 16px;">
+                                    <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 8px; color: #166534; font-weight: 700; font-size: 12.5px;">
+                                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                                        <span>Compra entregada verificada</span>
+                                    </div>
+                                    <h3 style="font-size: 16px; font-weight: 700; margin: 0 0 12px;">Comparte tu Experiencia</h3>
+                                    <form method="POST" action="<?= htmlspecialchars($baseUrl) ?>/account/review">
+                                        <?= Security::csrfField() ?>
+                                        <input type="hidden" name="product_id" value="<?= $prodId ?>">
+
+                                        <?php if (count($revOrders) > 1): ?>
+                                            <div style="margin-bottom: 12px;">
+                                                <label style="display: block; font-size: 12.5px; font-weight: 600; margin-bottom: 4px;">Compra a calificar *</label>
+                                                <select name="order_id" required style="width: 100%; padding: 8px; border-radius: 6px; border: 1px solid var(--color-border); font-size: 12.5px;">
+                                                    <?php foreach ($revOrders as $ro): ?>
+                                                        <option value="<?= (int)$ro['id'] ?>">
+                                                            Pedido <?= htmlspecialchars((string)$ro['order_number']) ?> (entregado <?= date('d/m/Y', strtotime((string)$ro['delivered_at'])) ?>)
+                                                        </option>
+                                                    <?php endforeach; ?>
+                                                </select>
+                                            </div>
+                                        <?php else: ?>
+                                            <input type="hidden" name="order_id" value="<?= (int)$firstOrder['id'] ?>">
+                                            <div style="font-size: 12px; color: var(--color-text-light, #6B7280); margin-bottom: 12px;">
+                                                Pedido <strong><?= htmlspecialchars((string)$firstOrder['order_number']) ?></strong>
+                                                <?php if (!empty($firstOrder['window']['days_left'])): ?>
+                                                    · Tienes <?= (int)$firstOrder['window']['days_left'] ?> días para opinar
+                                                <?php endif; ?>
+                                            </div>
+                                        <?php endif; ?>
+
+                                        <div style="margin-bottom: 12px;">
+                                            <label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 4px;">Tu Calificación *</label>
+                                            <select name="rating" required style="width: 100%; padding: 8px; border-radius: 6px; border: 1px solid var(--color-border); font-size: 13px;">
+                                                <option value="5">5 de 5 estrellas - Excelente</option>
+                                                <option value="4">4 de 5 estrellas - Bueno</option>
+                                                <option value="3">3 de 5 estrellas - Regular</option>
+                                                <option value="2">2 de 5 estrellas - Regular bajo</option>
+                                                <option value="1">1 de 5 estrellas - Insatisfecho</option>
+                                            </select>
+                                        </div>
+
+                                        <div style="margin-bottom: 14px;">
+                                            <label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 4px;">Descripción / Comentario *</label>
+                                            <textarea name="comment" rows="3" required placeholder="Cuéntale a otros clientes cómo te fue con el producto..." style="width: 100%; padding: 8px; border-radius: 6px; border: 1px solid var(--color-border); font-family: inherit; font-size: 13px;"></textarea>
+                                        </div>
+
+                                        <button type="submit" class="btn-store btn-store-primary" style="width: 100%; padding: 10px; font-size: 14px;">Publicar Opinión</button>
+                                    </form>
+                                </div>
+                            <?php endif; ?>
+
+                            <?php if (!empty($ctx['customer_reviews'])): ?>
+                                <?php foreach ($ctx['customer_reviews'] as $myRev):
+                                    $rid = (int)$myRev['id'];
+                                ?>
+                                    <div style="background: var(--color-surface, #FFF); padding: 18px; border-radius: 12px; border: 1px solid var(--color-border); margin-bottom: 14px;">
+                                        <div style="display: flex; justify-content: space-between; align-items: center; gap: 6px; margin-bottom: 6px;">
+                                            <span style="font-size: 12.5px; font-weight: 700; color: var(--color-primary, #008060);">
+                                                Tu reseña <?= !empty($myRev['order_number']) ? '(' . htmlspecialchars((string)$myRev['order_number']) . ')' : '' ?>
+                                            </span>
+                                            <span style="font-size: 11px; color: var(--color-text-light, #6B7280);">
+                                                <?= (int)$myRev['rating'] ?>/5 estrellas
+                                            </span>
+                                        </div>
+                                        <p style="font-size: 13px; color: var(--color-text); margin: 0 0 10px; line-height: 1.45;">
+                                            <?= nl2br(htmlspecialchars((string)$myRev['comment'])) ?>
+                                        </p>
+
+                                        <div style="display: flex; flex-wrap: wrap; gap: 6px;">
+                                            <?php if (!empty($myRev['can_edit'])): ?>
+                                                <button type="button" onclick="var el=document.getElementById('scms_rev_edit_<?= $rid ?>');if(el)el.style.display=(el.style.display==='none'?'block':'none');" class="btn-store btn-store-secondary" style="font-size: 12px; padding: 6px 10px;">
+                                                    Editar reseña
+                                                </button>
+                                            <?php endif; ?>
+                                            <?php if (!empty($myRev['can_followup'])): ?>
+                                                <button type="button" onclick="var el=document.getElementById('scms_rev_fu_<?= $rid ?>');if(el)el.style.display=(el.style.display==='none'?'block':'none');" class="btn-store btn-store-secondary" style="font-size: 12px; padding: 6px 10px;">
+                                                    Añadir comentario adicional
+                                                </button>
+                                            <?php endif; ?>
+                                        </div>
+
+                                        <?php if (!empty($myRev['can_edit'])): ?>
+                                            <form id="scms_rev_edit_<?= $rid ?>" method="POST" action="<?= htmlspecialchars($baseUrl) ?>/account/review/update/<?= $rid ?>" style="display: none; margin-top: 12px; padding-top: 10px; border-top: 1px dashed var(--color-border);">
+                                                <?= Security::csrfField() ?>
+                                                <div style="margin-bottom: 8px;">
+                                                    <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 3px;">Calificación *</label>
+                                                    <select name="rating" required style="width: 100%; padding: 6px; border-radius: 6px; border: 1px solid var(--color-border); font-size: 12.5px;">
+                                                        <?php for ($rv = 5; $rv >= 1; $rv--): ?>
+                                                            <option value="<?= $rv ?>" <?= (int)$myRev['rating'] === $rv ? 'selected' : '' ?>><?= $rv ?> estrellas</option>
+                                                        <?php endfor; ?>
+                                                    </select>
+                                                </div>
+                                                <div style="margin-bottom: 8px;">
+                                                    <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 3px;">Comentario actualizado *</label>
+                                                    <textarea name="comment" rows="3" required style="width: 100%; padding: 6px; border-radius: 6px; border: 1px solid var(--color-border); font-size: 12.5px;"><?= htmlspecialchars((string)$myRev['comment']) ?></textarea>
+                                                </div>
+                                                <button type="submit" class="btn-store btn-store-primary" style="width: 100%; padding: 7px; font-size: 12.5px;">Guardar Cambios</button>
+                                            </form>
+                                        <?php endif; ?>
+
+                                        <?php if (!empty($myRev['can_followup'])): ?>
+                                            <form id="scms_rev_fu_<?= $rid ?>" method="POST" action="<?= htmlspecialchars($baseUrl) ?>/account/review/followup/<?= $rid ?>" style="display: none; margin-top: 12px; padding-top: 10px; border-top: 1px dashed var(--color-border);">
+                                                <?= Security::csrfField() ?>
+                                                <div style="margin-bottom: 8px;">
+                                                    <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 3px;">Comentario adicional tras el uso *</label>
+                                                    <textarea name="followup_comment" rows="3" required placeholder="Cuenta cómo sigue el producto después de días o semanas..." style="width: 100%; padding: 6px; border-radius: 6px; border: 1px solid var(--color-border); font-size: 12.5px;"></textarea>
+                                                </div>
+                                                <button type="submit" class="btn-store btn-store-primary" style="width: 100%; padding: 7px; font-size: 12.5px;">Publicar Comentario Adicional</button>
+                                            </form>
+                                        <?php endif; ?>
+
+                                        <?php if (empty($myRev['can_edit']) && !empty($ctx['window_days'])): ?>
+                                            <div style="margin-top: 8px; font-size: 11.5px; color: var(--color-text-light, #6B7280);">
+                                                Plazo de edición cerrado (límite: <?= (int)$ctx['window_days'] ?> días tras la entrega).
+                                            </div>
+                                        <?php endif; ?>
+                                    </div>
+                                <?php endforeach; ?>
+                            <?php endif; ?>
+
+                            <?php if (!empty($ctx['pending_orders_in_transit'])): ?>
+                                <div style="background: var(--color-surface, #FFF); padding: 18px; border-radius: 12px; border: 1px solid var(--color-border); margin-bottom: 14px;">
+                                    <h4 style="font-size: 14px; font-weight: 700; margin: 0 0 6px;">Pedido en curso</h4>
+                                    <p style="font-size: 12.5px; color: var(--color-text-light, #6B7280); line-height: 1.5; margin: 0 0 10px;">
+                                        Tienes un pedido con este producto en camino. Podrás calificarlo únicamente cuando su estado sea <strong>Entregado</strong>.
+                                    </p>
+                                    <a href="<?= htmlspecialchars($baseUrl) ?>/account" class="btn-store btn-store-secondary" style="font-size: 12.5px; width: 100%; text-decoration: none; display: block; text-align: center;">Ver Seguimiento en Mi Cuenta</a>
+                                </div>
+                            <?php elseif (empty($ctx['reviewable_orders']) && !empty($ctx['expired_unreviewed_orders'])): ?>
+                                <div style="background: var(--color-surface, #FFF); padding: 18px; border-radius: 12px; border: 1px solid var(--color-border); text-align: center;">
+                                    <h4 style="font-size: 14px; font-weight: 700; margin: 0 0 6px;">Plazo de calificación cerrado</h4>
+                                    <p style="font-size: 12.5px; color: var(--color-text-light, #6B7280); line-height: 1.5; margin: 0;">
+                                        Transcurrieron más de <?= (int)$ctx['window_days'] ?> días desde la entrega de tu pedido.
+                                    </p>
+                                </div>
+                            <?php elseif (empty($ctx['reviewable_orders']) && empty($ctx['customer_reviews'])): ?>
+                                <div style="background: var(--color-surface, #FFF); padding: 24px; border-radius: 12px; border: 1px solid var(--color-border); text-align: center;">
+                                    <h4 style="font-size: 15px; font-weight: 700; margin-bottom: 6px;">Opiniones 100% Reales</h4>
+                                    <p style="font-size: 13px; color: var(--color-text-light, #6B7280); line-height: 1.5; margin-bottom: 16px;">
+                                        Solo los clientes que han recibido este producto (estado Entregado) pueden calificarlo.
+                                    </p>
+                                    <a href="<?= htmlspecialchars($baseUrl) ?>/account" class="btn-store btn-store-secondary" style="font-size: 13px; width: 100%; text-decoration: none; display: block; text-align: center;">Ver Mis Pedidos</a>
+                                </div>
+                            <?php endif; ?>
+                        <?php endif; ?>
+                    </div>
+                </div>
+            <?php if ($useContainer): ?></div><?php endif; ?>
+        </section>
+        <?php
+        return ob_get_clean();
+    }
+
     /**
      * Convierte texto multilinea ("Clave: Valor") o JSON en filas estructuradas de especificaciones.
      */

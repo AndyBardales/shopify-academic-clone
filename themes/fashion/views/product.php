@@ -192,98 +192,19 @@ $reviewLabel = ($revCount === 1) ? '1 opinión de clientes' : "{$revCount} opini
     </div>
 
     <!-- SECCIÓN DE RESEÑAS FASHION -->
-    <?php
-    $isCustomerLoggedIn = \ShopCMS\Core\Auth::isCustomer();
-    $customerInfo = \ShopCMS\Core\Auth::customer();
-    $hasPurchased = $isCustomerLoggedIn ? \ShopCMS\Core\Auth::hasPurchasedProduct((int)$customerInfo['id'], (int)$product['id']) : false;
-    ?>
-    <section style="margin-top: 60px; padding-top: 40px; border-top: 1px solid #E5E5E5;">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 28px;">
-            <h2 style="font-family: var(--font-serif); font-size: 22px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase;">Experiencias & Valoraciones (<?= count($reviews) ?>)</h2>
-        </div>
-
-        <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 40px;">
-            <div>
-                <?php if (empty($reviews)): ?>
-                    <p style="color: #737373; font-size: 13px;">Esta prenda aún no cuenta con reseñas de compradores.</p>
-                <?php else: ?>
-                    <?php foreach ($reviews as $rev): ?>
-                        <div style="padding: 20px; border: 1px solid #E5E5E5; margin-bottom: 16px; background: #FFF;">
-                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; flex-wrap: wrap; gap: 6px;">
-                                <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
-                                    <strong style="font-size: 14px;"><?= htmlspecialchars($rev['customer_name'] ?? $rev['author_name'] ?? 'Cliente') ?></strong>
-                                    <span style="font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: #171717; background: #F5F5F5; border: 1px solid #E5E5E5; padding: 2px 6px; font-weight: 700;">
-                                        Compra Verificada
-                                    </span>
-                                    <?php if (!empty($rev['is_featured'])): ?>
-                                        <span style="font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: #92400E; background: #FEF3C7; padding: 2px 6px; font-weight: 700;">Destacada</span>
-                                    <?php endif; ?>
-                                </div>
-                                <span style="font-size: 11px; color: #A3A3A3;"><?= date('d/m/Y', strtotime($rev['created_at'])) ?></span>
-                            </div>
-                            <div style="display: flex; gap: 2px; margin-bottom: 8px;">
-                                <?php for ($i = 1; $i <= 5; $i++): ?>
-                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="<?= $i <= $rev['rating'] ? '#171717' : 'none' ?>" stroke="<?= $i <= $rev['rating'] ? '#171717' : '#D4D4D4' ?>" stroke-width="2">
-                                        <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
-                                    </svg>
-                                <?php endfor; ?>
-                            </div>
-                            <p style="font-size: 13px; color: #525252; line-height: 1.6; margin: 0;"><?= htmlspecialchars($rev['comment']) ?></p>
-                            <?php if (!empty($rev['admin_reply'])): ?>
-                                <div style="margin-top: 12px; padding: 10px 14px; background: #FAFAFA; border-left: 2px solid #171717; font-size: 12.5px; color: #404040;">
-                                    <strong style="display: block; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: #171717; margin-bottom: 3px;">Respuesta oficial de la tienda</strong>
-                                    <?= nl2br(htmlspecialchars($rev['admin_reply'])) ?>
-                                </div>
-                            <?php endif; ?>
-                        </div>
-                    <?php endforeach; ?>
-                <?php endif; ?>
-            </div>
-
-            <!-- PANEL RESEÑA VERIFICADA FASHION -->
-            <div>
-                <?php if ($hasPurchased): ?>
-                    <div style="background: #FAFAFA; border: 1px solid #E5E5E5; padding: 24px;">
-                        <h3 style="font-family: var(--font-serif); font-size: 15px; font-weight: 700; letter-spacing: 1px; margin-bottom: 16px; text-transform: uppercase;">Califica tu Prenda</h3>
-                        <form method="POST" action="<?= $baseUrl ?>/account/review">
-                            <input type="hidden" name="product_id" value="<?= $product['id'] ?>">
-                            <div style="margin-bottom: 14px;">
-                                <label style="display: block; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 4px;">Calificación *</label>
-                                <select name="rating" required style="width: 100%; padding: 10px; border: 1px solid #D4D4D4; font-size: 13px;">
-                                    <option value="5">5 estrellas - Excepcional</option>
-                                    <option value="4">4 estrellas - Muy buena</option>
-                                    <option value="3">3 estrellas - Aceptable</option>
-                                    <option value="2">2 estrellas - Regular</option>
-                                    <option value="1">1 estrella - Deficiente</option>
-                                </select>
-                            </div>
-                            <div style="margin-bottom: 18px;">
-                                <label style="display: block; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 4px;">Tu Comentario *</label>
-                                <textarea name="comment" required rows="3" placeholder="Comenta los acabados, tela y talle..." style="width: 100%; padding: 10px; border: 1px solid #D4D4D4; font-size: 13px;"></textarea>
-                            </div>
-                            <button type="submit" class="btn-store btn-store-primary" style="width: 100%;">Publicar Valoración</button>
-                        </form>
-                    </div>
-                <?php elseif ($isCustomerLoggedIn): ?>
-                    <div style="background: #FAFAFA; border: 1px solid #E5E5E5; padding: 24px; text-align: center;">
-                        <h4 style="font-family: var(--font-serif); font-size: 15px; font-weight: 700; letter-spacing: 1px; margin-bottom: 8px; text-transform: uppercase;">Valoraciones Verificadas</h4>
-                        <p style="font-size: 12px; color: #737373; line-height: 1.6; margin-bottom: 14px;">
-                            Solo clientes que han adquirido esta prenda pueden valorarla. Puedes calificar tus piezas adquiridas desde tu historial.
-                        </p>
-                        <a href="<?= $baseUrl ?>/account" class="btn-fashion" style="font-size: 11px; padding: 10px 16px; width: 100%;">Ver Mis Pedidos</a>
-                    </div>
-                <?php else: ?>
-                    <div style="background: #FAFAFA; border: 1px solid #E5E5E5; padding: 24px; text-align: center;">
-                        <h4 style="font-family: var(--font-serif); font-size: 15px; font-weight: 700; letter-spacing: 1px; margin-bottom: 8px; text-transform: uppercase;">Opiniones Reales</h4>
-                        <p style="font-size: 12px; color: #737373; line-height: 1.6; margin-bottom: 16px;">
-                            Para asegurar la máxima autenticidad, únicamente compradores verificados pueden calificar las colecciones.
-                        </p>
-                        <a href="<?= $baseUrl ?>/login" class="btn-fashion" style="font-size: 11px; padding: 10px 16px; width: 100%;">Iniciar Sesión</a>
-                    </div>
-                <?php endif; ?>
-            </div>
-        </div>
-    </section>
+    <!-- SECCIÓN DE RESEÑAS FASHION -->
+    <?= \ShopCMS\Core\StorefrontExperience::renderProductReviewsSection(
+        $product,
+        $reviews ?? [],
+        $baseUrl,
+        [
+            'title'         => 'Experiencias & Valoraciones',
+            'serif'         => true,
+            'star_active'   => '#171717',
+            'star_empty'    => '#E5E5E5',
+            'use_container' => false,
+        ]
+    ) ?>
 
     <!-- HOOK PARA RECOMENDACIONES (Related Products) -->
     <?php \ShopCMS\Core\PluginManager::doAction('product_page_bottom', $product); ?>

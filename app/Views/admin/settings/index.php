@@ -588,7 +588,7 @@ $hasPaymentPlugin = $hasPaymentPlugin ?? false;
                             </div>
                         </div>
 
-                        <div class="switch-row" style="margin-bottom: 0;">
+                        <div class="switch-row" style="margin-bottom: 14px;">
                             <div>
                                 <div class="switch-row-title">Publicar automáticamente reseñas verificadas</div>
                                 <div class="switch-row-desc">Si se desactiva, las nuevas opiniones de clientes pasan por aprobación manual en <a href="<?= $baseUrl ?>/admin/reviews">Reseñas</a>.</div>
@@ -597,6 +597,12 @@ $hasPaymentPlugin = $hasPaymentPlugin ?? false;
                                 <input type="checkbox" name="reviews_auto_approve" value="1" <?= ($settings['reviews_auto_approve'] ?? '1') === '1' ? 'checked' : '' ?>>
                                 <span class="polaris-slider"></span>
                             </label>
+                        </div>
+
+                        <div class="form-group" style="margin-bottom: 0;">
+                            <label for="reviews_window_days">Plazo límite para opinar y editar reseñas tras la entrega (días)</label>
+                            <input type="number" id="reviews_window_days" name="reviews_window_days" class="form-control" min="0" value="<?= (int)($settings['reviews_window_days'] ?? 90) ?>">
+                            <div style="font-size: 12px; color: var(--color-text-secondary); margin-top: 4px;">Por defecto <strong>90 días</strong> desde que el pedido se marca como Entregado. Usa <strong>0</strong> para no aplicar límite de días.</div>
                         </div>
                     </div>
                 </div>

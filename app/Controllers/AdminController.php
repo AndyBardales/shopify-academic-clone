@@ -1889,6 +1889,7 @@ class AdminController {
     // MÓDULO 6: RESEÑAS Y CALIFICACIONES
     // ==========================================
     public function reviews(): void {
+        \ShopCMS\Core\StorefrontExperience::ensureReviewsSchema();
         $statusFilter = $_GET['status'] ?? '';
         $ratingFilter = isset($_GET['rating']) && $_GET['rating'] !== '' ? (int)$_GET['rating'] : 0;
         $search = trim($_GET['q'] ?? '');
@@ -1896,15 +1897,17 @@ class AdminController {
         $sql = "SELECT r.*, 
                        p.name as product_name, 
                        p.slug as product_slug,
+                       ord.order_number,
                        EXISTS(
                            SELECT 1 FROM " . Database::table('orders') . " o
                            INNER JOIN " . Database::table('order_items') . " oi ON oi.order_id = o.id
-                           WHERE LOWER(o.customer_email) = LOWER(r.customer_email)
+                           WHERE (r.order_id = o.id OR LOWER(o.customer_email) = LOWER(r.customer_email))
                              AND oi.product_id = r.product_id
-                             AND o.status != 'cancelled'
+                             AND o.status IN ('delivered', 'completed')
                        ) as is_verified_buyer
                 FROM " . Database::table('reviews') . " r
                 JOIN " . Database::table('products') . " p ON r.product_id = p.id
+                LEFT JOIN " . Database::table('orders') . " ord ON ord.id = r.order_id
                 WHERE 1=1";
         $params = [];
 
@@ -1917,8 +1920,10 @@ class AdminController {
             $params[] = $ratingFilter;
         }
         if ($search !== '') {
-            $sql .= " AND (p.name LIKE ? OR r.customer_name LIKE ? OR r.customer_email LIKE ? OR r.title LIKE ? OR r.comment LIKE ?)";
+            $sql .= " AND (p.name LIKE ? OR r.customer_name LIKE ? OR r.customer_email LIKE ? OR r.title LIKE ? OR r.comment LIKE ? OR r.followup_comment LIKE ? OR ord.order_number LIKE ?)";
             $like = "%{$search}%";
+            $params[] = $like;
+            $params[] = $like;
             $params[] = $like;
             $params[] = $like;
             $params[] = $like;
@@ -2273,7 +2278,7 @@ class AdminController {
                     $num = min(100.0, $num);
                 }
                 $toSave[$key] = rtrim(rtrim(number_format($num, 2, '.', ''), '0'), '.') ?: '0';
-            } elseif ($key === 'inventory_low_stock_limit') {
+            } elseif ($key === 'inventory_low_stock_limit' || $key === 'reviews_window_days') {
                 $toSave[$key] = (string)max(0, (int)$raw);
             } elseif ($key === 'order_prefix') {
                 $clean = preg_replace('/[^A-Za-z0-9#\-_]/', '', $raw);

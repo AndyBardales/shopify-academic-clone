@@ -210,16 +210,22 @@ CREATE TABLE IF NOT EXISTS `{prefix}coupons` (
 CREATE TABLE IF NOT EXISTS `{prefix}reviews` (
     `id` INT AUTO_INCREMENT PRIMARY KEY,
     `product_id` INT NOT NULL,
+    `order_id` INT NULL,
+    `customer_id` INT NULL,
     `customer_name` VARCHAR(150) NOT NULL,
     `customer_email` VARCHAR(150) NOT NULL,
     `rating` TINYINT(1) NOT NULL,
     `title` VARCHAR(255) NULL,
     `comment` TEXT NOT NULL,
+    `followup_comment` TEXT NULL,
+    `followup_at` DATETIME NULL,
     `admin_reply` TEXT NULL,
     `admin_replied_at` DATETIME NULL,
     `status` ENUM('pending', 'approved', 'rejected', 'hidden') DEFAULT 'pending',
     `is_featured` TINYINT(1) NOT NULL DEFAULT 0,
+    `updated_at` DATETIME NULL,
     `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+    INDEX `idx_review_order_product` (`order_id`, `product_id`),
     FOREIGN KEY (`product_id`) REFERENCES `{prefix}products`(`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 

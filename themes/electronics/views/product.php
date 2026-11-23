@@ -205,120 +205,19 @@ $reviewLabel = ($revCount === 1) ? '1 opinión de clientes' : "{$revCount} opini
     </div>
 
     <!-- SECCIÓN DE RESEÑAS TECH (SOLO COMPRADORES VERIFICADOS) -->
-    <?php
-    $isCustomerLoggedIn = \ShopCMS\Core\Auth::isCustomer();
-    $customerInfo = \ShopCMS\Core\Auth::customer();
-    $hasPurchased = $isCustomerLoggedIn ? \ShopCMS\Core\Auth::hasPurchasedProduct((int)$customerInfo['id'], (int)$product['id']) : false;
-    ?>
-    <section style="margin-top: 50px; padding-top: 36px; border-top: 2px solid var(--color-border);">
-        <h2 style="font-family: var(--font-mono); font-size: 18px; font-weight: 700; color: #0F172A; margin-bottom: 24px; text-transform: uppercase;">
-            Benchmarks & Calificaciones de Usuarios (<?= count($reviews) ?>)
-        </h2>
-
-        <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 32px;">
-            <div>
-                <?php if (empty($reviews)): ?>
-                    <div style="padding: 24px; background: #FFF; border: 1px solid var(--color-border); border-radius: 6px; font-size: 13px; color: var(--color-text-light);">
-                        Sin benchmarks registrados para este hardware.
-                    </div>
-                <?php else: ?>
-                    <?php foreach ($reviews as $rev): ?>
-                        <div style="padding: 16px; border: 1px solid var(--color-border); border-radius: 6px; margin-bottom: 14px; background: #FFF;">
-                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; flex-wrap: wrap; gap: 6px;">
-                                <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
-                                    <strong style="font-family: var(--font-mono); font-size: 13px;"><?= htmlspecialchars($rev['customer_name'] ?? $rev['author_name'] ?? 'Cliente') ?></strong>
-                                    <span style="display: inline-flex; align-items: center; gap: 3px; font-family: var(--font-mono); font-size: 10px; color: #166534; background: #DCFCE7; padding: 2px 6px; border-radius: 3px; font-weight: 700;">
-                                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                                            <polyline points="20 6 9 17 4 12"></polyline>
-                                        </svg>
-                                        Comprador Verificado
-                                    </span>
-                                    <?php if (!empty($rev['is_featured'])): ?>
-                                        <span style="font-family: var(--font-mono); font-size: 10px; color: #92400E; background: #FEF3C7; padding: 2px 6px; border-radius: 3px; font-weight: 700;">Destacada</span>
-                                    <?php endif; ?>
-                                </div>
-                                <span style="font-family: var(--font-mono); font-size: 11px; color: var(--color-text-light);"><?= date('Y-m-d', strtotime($rev['created_at'])) ?></span>
-                            </div>
-                            <div style="display: flex; gap: 2px; margin-bottom: 8px;">
-                                <?php for ($i = 1; $i <= 5; $i++): ?>
-                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="<?= $i <= $rev['rating'] ? '#2563EB' : '#E2E8F0' ?>" stroke="<?= $i <= $rev['rating'] ? '#2563EB' : '#CBD5E1' ?>" stroke-width="1.5">
-                                        <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
-                                    </svg>
-                                <?php endfor; ?>
-                            </div>
-                            <p style="font-size: 13px; color: #334155; margin: 0; line-height: 1.5;"><?= htmlspecialchars($rev['comment']) ?></p>
-                            <?php if (!empty($rev['admin_reply'])): ?>
-                                <div style="margin-top: 10px; padding: 9px 12px; background: #F8FAFC; border-left: 3px solid #2563EB; border-radius: 4px; font-size: 12.5px; color: #334155;">
-                                    <strong style="display: block; font-size: 11px; color: #1D4ED8; margin-bottom: 2px;">Respuesta oficial de la tienda</strong>
-                                    <?= nl2br(htmlspecialchars($rev['admin_reply'])) ?>
-                                </div>
-                            <?php endif; ?>
-                        </div>
-                    <?php endforeach; ?>
-                <?php endif; ?>
-            </div>
-
-            <!-- PANEL RESEÑA VERIFICADA TECH -->
-            <div>
-                <?php if ($hasPurchased): ?>
-                    <div style="background: #FFF; border: 1px solid var(--color-border); border-radius: 6px; padding: 20px;">
-                        <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 12px; color: #166534; font-weight: 700; font-size: 12px; font-family: var(--font-mono);">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                                <polyline points="20 6 9 17 4 12"></polyline>
-                            </svg>
-                            <span>Comprador Verificado</span>
-                        </div>
-                        <h3 style="font-family: var(--font-mono); font-size: 13px; font-weight: 700; margin-bottom: 14px; text-transform: uppercase;">Registrar Benchmark / Evaluación</h3>
-                        <form method="POST" action="<?= $baseUrl ?>/account/review">
-                            <input type="hidden" name="product_id" value="<?= $product['id'] ?>">
-                            <div style="margin-bottom: 12px;">
-                                <label style="display: block; font-family: var(--font-mono); font-size: 11px; font-weight: 600; margin-bottom: 4px;">Puntuación Técnica *</label>
-                                <select name="rating" required style="width: 100%; padding: 8px 10px; border: 1px solid var(--color-border); border-radius: 4px; font-size: 13px; font-family: var(--font-mono);">
-                                    <option value="5">5 / 5 - Rendimiento Óptimo</option>
-                                    <option value="4">4 / 5 - Cumple especificaciones</option>
-                                    <option value="3">3 / 5 - Aceptable</option>
-                                    <option value="2">2 / 5 - Inestable</option>
-                                    <option value="1">1 / 5 - Fallas críticas</option>
-                                </select>
-                            </div>
-                            <div style="margin-bottom: 16px;">
-                                <label style="display: block; font-family: var(--font-mono); font-size: 11px; font-weight: 600; margin-bottom: 4px;">Reporte de Rendimiento *</label>
-                                <textarea name="comment" required rows="3" placeholder="Describe tu experiencia de hardware..." style="width: 100%; padding: 8px 10px; border: 1px solid var(--color-border); border-radius: 4px; font-size: 13px;"></textarea>
-                            </div>
-                            <button type="submit" class="btn-store btn-store-primary" style="width: 100%; font-family: var(--font-mono); font-size: 12px;">Publicar Evaluación Verificada</button>
-                        </form>
-                    </div>
-                <?php elseif ($isCustomerLoggedIn): ?>
-                    <div style="background: #FFF; border: 1px solid var(--color-border); border-radius: 6px; padding: 20px; text-align: center;">
-                        <div style="color: #2563EB; margin-bottom: 8px;">
-                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
-                            </svg>
-                        </div>
-                        <h4 style="font-family: var(--font-mono); font-size: 13px; font-weight: 700; margin-bottom: 6px; text-transform: uppercase;">Evaluaciones Verificadas</h4>
-                        <p style="font-size: 12px; color: var(--color-text-light); line-height: 1.5; margin-bottom: 14px;">
-                            Solo los clientes que han adquirido este producto tecnológico pueden certificar su rendimiento.
-                        </p>
-                        <a href="<?= $baseUrl ?>/account" class="btn-store btn-store-secondary" style="font-family: var(--font-mono); font-size: 11px; width: 100%; text-decoration: none; display: block; text-align: center;">Ver Mis Pedidos</a>
-                    </div>
-                <?php else: ?>
-                    <div style="background: #FFF; border: 1px solid var(--color-border); border-radius: 6px; padding: 20px; text-align: center;">
-                        <div style="color: #2563EB; margin-bottom: 8px;">
-                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
-                                <polyline points="22 4 12 14.01 9 11.01"></polyline>
-                            </svg>
-                        </div>
-                        <h4 style="font-family: var(--font-mono); font-size: 13px; font-weight: 700; margin-bottom: 6px; text-transform: uppercase;">Benchmarks Certificados</h4>
-                        <p style="font-size: 12px; color: var(--color-text-light); line-height: 1.5; margin-bottom: 14px;">
-                            Inicia sesión con tu cuenta para calificar los dispositivos que hayas adquirido en la tienda.
-                        </p>
-                        <a href="<?= $baseUrl ?>/login" class="btn-store btn-store-primary" style="font-family: var(--font-mono); font-size: 11px; width: 100%; text-decoration: none; display: block; text-align: center;">Iniciar Sesión</a>
-                    </div>
-                <?php endif; ?>
-            </div>
-        </div>
-    </section>
+    <!-- SECCIÓN DE RESEÑAS TECH -->
+    <?= \ShopCMS\Core\StorefrontExperience::renderProductReviewsSection(
+        $product,
+        $reviews ?? [],
+        $baseUrl,
+        [
+            'title'         => 'Evaluaciones & Calificaciones',
+            'mono'          => true,
+            'star_active'   => '#2563EB',
+            'star_empty'    => '#E2E8F0',
+            'use_container' => false,
+        ]
+    ) ?>
 
     <!-- HOOK PARA RECOMENDACIONES (Related Products / Cross-sell) -->
     <?php \ShopCMS\Core\PluginManager::doAction('product_page_bottom', $product); ?>

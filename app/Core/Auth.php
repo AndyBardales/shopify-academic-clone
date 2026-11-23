@@ -233,14 +233,17 @@ class Auth {
     }
 
     /**
-     * Verifica si un cliente ha comprado efectivamente un producto
+     * Verifica si un cliente tiene al menos una compra efectivamente entregada del producto.
      */
     public static function hasPurchasedProduct(int $customerId, int $productId): bool {
+        if ($customerId <= 0 || $productId <= 0) {
+            return false;
+        }
         $count = Database::fetch("
             SELECT COUNT(*) as c
             FROM " . Database::table('order_items') . " oi
             INNER JOIN " . Database::table('orders') . " o ON oi.order_id = o.id
-            WHERE o.customer_id = ? AND oi.product_id = ?
+            WHERE o.customer_id = ? AND oi.product_id = ? AND o.status IN ('delivered', 'completed')
         ", [$customerId, $productId]);
 
         return ($count && (int)$count['c'] > 0);

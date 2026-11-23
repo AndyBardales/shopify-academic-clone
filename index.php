@@ -221,6 +221,8 @@ Router::post('/account/order-voucher/{id}', [StoreController::class, 'uploadOrde
 
 // EnvÃ­o de ReseÃ±as Verificadas de Clientes
 Router::post('/account/review', [StoreController::class, 'submitVerifiedReview']);
+Router::post('/account/review/update/{id}', [StoreController::class, 'updateVerifiedReview']);
+Router::post('/account/review/followup/{id}', [StoreController::class, 'addReviewFollowup']);
 Router::post('/product/{slug}/review', [StoreController::class, 'submitVerifiedReview']);
 Router::post('/review/submit', [StoreController::class, 'submitVerifiedReview']);
 
