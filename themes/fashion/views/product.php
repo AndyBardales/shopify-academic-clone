@@ -105,6 +105,15 @@ $reviewLabel = ($revCount === 1) ? '1 opinión de clientes' : "{$revCount} opini
                     <?= $avgRating > 0 ? "{$avgRating} / 5" : 'Primera edición' ?>
                     (<?= $reviewLabel ?>)
                 </span>
+                <?php if (($soldCount ?? 0) > 0): ?>
+                    <span style="color: #D4D4D4;">|</span>
+                    <span style="font-size: 12px; color: #737373; font-weight: 500;">+<?= \ShopCMS\Core\StorefrontExperience::formatCompactCount((int) $soldCount) ?> vendidos</span>
+                <?php endif; ?>
+                <span style="color: #D4D4D4;">|</span>
+                <span style="display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: #737373; font-weight: 600;" title="Clientes que guardaron este producto en favoritos">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="#EF4444" stroke="#EF4444" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
+                    <span id="scms_top_heart_count_<?= (int) $product['id'] ?>"><?= \ShopCMS\Core\StorefrontExperience::formatCompactCount((int) ($heartCount ?? 0)) ?></span>
+                </span>
             </div>
 
             <!-- PRECIO -->
@@ -183,15 +192,18 @@ $reviewLabel = ($revCount === 1) ? '1 opinión de clientes' : "{$revCount} opini
                 </div>
 
                 <!-- CANTIDAD Y BOTÓN -->
-                <div style="display: flex; gap: 14px; margin-bottom: 24px;">
+                <div style="display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 24px;">
                     <input type="number" id="quantity_input" name="quantity" value="1" min="1" max="<?= max(1, $initialQty) ?>" style="width: 70px; padding: 12px; border: 1px solid #D4D4D4; border-radius: 0; text-align: center; font-size: 14px; font-weight: 600;">
-                    <button type="submit" id="submit_cart_btn" class="btn-store btn-store-primary" style="flex: 1;" <?= $initialQty <= 0 ? 'disabled' : '' ?>>
+                    <button type="submit" id="submit_cart_btn" class="btn-store btn-store-primary" style="flex: 1 1 170px;" <?= $initialQty <= 0 ? 'disabled' : '' ?>>
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 8px;">
                             <circle cx="9" cy="21" r="1"></circle>
                             <circle cx="20" cy="21" r="1"></circle>
                             <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"></path>
                         </svg>
                         Añadir al Carrito
+                    </button>
+                    <button type="submit" id="buy_now_btn" name="buy_now" value="1" data-buy-now="1" class="btn-store" style="flex: 1 1 140px; padding: 12px; background: transparent; color: #171717; border: 1.5px solid #171717; font-weight: 700; border-radius: 0;" <?= $initialQty <= 0 ? 'disabled' : '' ?>>
+                        Comprar ahora
                     </button>
                 </div>
 

@@ -8,6 +8,7 @@ use ShopCMS\Core\Auth;
 use ShopCMS\Core\Database;
 use ShopCMS\Core\PluginManager;
 use ShopCMS\Core\Settings;
+use ShopCMS\Core\StorefrontExperience;
 use ShopCMS\Core\ThemeCustomizer;
 
 if (!function_exists('scms_wishlist_customer_data')) {
@@ -61,16 +62,50 @@ PluginManager::addAction('product_page_buttons', function ($product) {
     $customerId = Auth::customerId();
     $savedIds = $customerId > 0 ? scms_wishlist_customer_ids($customerId) : [];
     $isSaved = in_array($prodId, $savedIds, true);
+    $heartTotal = StorefrontExperience::getProductHeartCount($prodId);
+    $heartLabel = StorefrontExperience::formatCompactCount($heartTotal);
 
     echo '
-    <div style="margin-top: 12px; margin-bottom: 10px;">
-        <button type="button" onclick="toggleWishlist(' . $prodId . ')" id="wishlist_btn_' . $prodId . '" class="btn-store btn-store-secondary" style="width: 100%; padding: 10px; font-size: 14px; display: flex; align-items: center; justify-content: center; gap: 8px;">
+    <div style="margin-top: 12px; margin-bottom: 10px; display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+        <button type="button" onclick="scmsShareCurrentProduct(this)" class="btn-store btn-store-secondary" style="width: 100%; padding: 10px 12px; font-size: 13.5px; display: flex; align-items: center; justify-content: center; gap: 7px;">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="18" cy="5" r="3"></circle>
+                <circle cx="6" cy="12" r="3"></circle>
+                <circle cx="18" cy="19" r="3"></circle>
+                <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line>
+                <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line>
+            </svg>
+            <span>Compartir</span>
+        </button>
+        <button type="button" onclick="toggleWishlist(' . $prodId . ')" id="wishlist_btn_' . $prodId . '" class="btn-store btn-store-secondary" style="width: 100%; padding: 10px 12px; font-size: 13.5px; display: flex; align-items: center; justify-content: center; gap: 7px;">
             <svg id="wishlist_icon_' . $prodId . '" width="16" height="16" viewBox="0 0 24 24" fill="' . ($isSaved ? '#D72C0D' : 'none') . '" stroke="' . ($isSaved ? '#D72C0D' : 'currentColor') . '" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path>
             </svg>
-            <span id="wishlist_text_' . $prodId . '">' . ($isSaved ? 'Guardado en tus Favoritos' : 'Guardar en Lista de Deseos') . '</span>
+            <span id="wishlist_text_' . $prodId . '" style="display:none;">' . ($isSaved ? 'Guardado en tus Favoritos' : 'Guardar en Lista de Deseos') . '</span>
+            <span id="wishlist_heart_count_' . $prodId . '" style="font-weight: 700;">' . htmlspecialchars($heartLabel) . '</span>
         </button>
-    </div>';
+    </div>
+    <script>
+    if (!window.scmsShareCurrentProduct) {
+        window.scmsShareCurrentProduct = function(btn) {
+            var url = window.location.href;
+            var labelEl = btn ? btn.querySelector("span") : null;
+            if (navigator.share) {
+                navigator.share({ title: document.title, url: url }).catch(function() {});
+                return;
+            }
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(url).then(function() {
+                    if (labelEl) {
+                        var old = labelEl.textContent;
+                        labelEl.textContent = "Enlace copiado";
+                        setTimeout(function() { labelEl.textContent = old; }, 1800);
+                    }
+                });
+            }
+        };
+    }
+    </script>';
 });
 
 PluginManager::addAction('theme_footer', function () {
@@ -188,6 +223,17 @@ PluginManager::addAction('theme_footer', function () {
             }
             if (data && data.ok) {
                 wishlistProducts = Array.isArray(data.products) ? data.products : [];
+                if (typeof data.product_hearts === "number" && Number(productId) > 0) {
+                    var hc = document.getElementById("wishlist_heart_count_" + Number(productId));
+                    if (hc) {
+                        var val = data.product_hearts;
+                        hc.textContent = val >= 1000 ? (val / 1000).toFixed(1) + "K" : String(val);
+                    }
+                    var hcTop = document.getElementById("scms_top_heart_count_" + Number(productId));
+                    if (hcTop) {
+                        hcTop.textContent = String(data.product_hearts);
+                    }
+                }
                 updateFab();
             }
             return data;

@@ -9,6 +9,7 @@ use ShopCMS\Core\InventoryManager;
 use ShopCMS\Core\Settings;
 use ShopCMS\Core\ThemeCustomizer;
 use ShopCMS\Core\CatalogHelper;
+use ShopCMS\Core\StorefrontExperience;
 
 class StoreController {
 
@@ -167,6 +168,8 @@ class StoreController {
             'galleryImages' => $galleryImages,
             'reviews' => $reviews,
             'avgRating' => $avgRating,
+            'heartCount' => StorefrontExperience::getProductHeartCount((int)$product['id']),
+            'soldCount' => StorefrontExperience::getProductSoldCount((int)$product['id']),
             'currency' => $this->getCurrency()
         ]);
     }
@@ -347,6 +350,10 @@ class StoreController {
     }
 
     public function cartAdd(): void {
+        $wantsJson = str_contains(strtolower((string)($_SERVER['HTTP_ACCEPT'] ?? '')), 'application/json')
+            || (($_POST['ajax'] ?? '') === '1');
+        $baseUrl = defined('APP_URL') ? APP_URL : '';
+
         $productId = (int)($_POST['product_id'] ?? 0);
         $variantId = !empty($_POST['variant_id']) ? (int)$_POST['variant_id'] : null;
         $quantity = max(1, (int)($_POST['quantity'] ?? 1));
@@ -354,9 +361,34 @@ class StoreController {
         $product = Database::fetch("SELECT * FROM " . Database::table('products') . " WHERE id = ?", [$productId]);
         if (!$product) {
             if (!\ShopCMS\Core\Auth::isCustomer()) {
+                if ($wantsJson) {
+                    header('Content-Type: application/json; charset=utf-8');
+                    http_response_code(401);
+                    $_SESSION['checkout_notice'] = "Inicia sesión para agregar productos a tu carrito de compras.";
+                    echo json_encode(['ok' => false, 'require_login' => true, 'login_url' => $baseUrl . '/login?auth_msg=cart&redirect=catalog']);
+                    exit;
+                }
                 $this->requireCustomer("Inicia sesión para agregar productos a tu carrito de compras.", "catalog");
             }
-            header('Location: ' . (defined('APP_URL') ? APP_URL : '') . '/catalog');
+            if ($wantsJson) {
+                header('Content-Type: application/json; charset=utf-8');
+                http_response_code(404);
+                echo json_encode(['ok' => false, 'error' => 'Producto no encontrado.']);
+                exit;
+            }
+            header('Location: ' . $baseUrl . '/catalog');
+            exit;
+        }
+
+        if (!\ShopCMS\Core\Auth::isCustomer() && $wantsJson) {
+            header('Content-Type: application/json; charset=utf-8');
+            http_response_code(401);
+            $_SESSION['checkout_notice'] = "Inicia sesión para agregar productos a tu carrito de compras.";
+            echo json_encode([
+                'ok' => false,
+                'require_login' => true,
+                'login_url' => $baseUrl . '/login?auth_msg=cart&redirect=' . urlencode('/product/' . $product['slug']),
+            ]);
             exit;
         }
 
@@ -371,6 +403,9 @@ class StoreController {
             if ($variant) {
                 $title .= " (" . $variant['title'] . ")";
                 $price = $variant['price'];
+                if (!empty($variant['image_url'])) {
+                    $image = $variant['image_url'];
+                }
             }
         }
 
@@ -383,16 +418,27 @@ class StoreController {
         $currentInCart = isset($_SESSION['cart'][$cartKey]) ? (int)$_SESSION['cart'][$cartKey]['quantity'] : 0;
         $desiredQty = $currentInCart + $quantity;
         $stockInfo = InventoryManager::getAvailableStock($productId, $variantId);
+        $noticeMsg = 'Producto agregado a tu cesta.';
 
         if ($stockInfo['track']) {
             if ($stockInfo['available'] <= 0) {
-                $_SESSION['cart_error'] = "Lo sentimos, '{$title}' se encuentra agotado temporalmente.";
-                header('Location: ' . (defined('APP_URL') ? APP_URL : '') . '/cart');
+                $errMsg = "Lo sentimos, '{$title}' se encuentra agotado temporalmente.";
+                if ($wantsJson) {
+                    header('Content-Type: application/json; charset=utf-8');
+                    http_response_code(409);
+                    echo json_encode(['ok' => false, 'error' => $errMsg, 'basket' => StorefrontExperience::buildSideBasketData()], JSON_UNESCAPED_UNICODE);
+                    exit;
+                }
+                $_SESSION['cart_error'] = $errMsg;
+                header('Location: ' . $baseUrl . '/cart');
                 exit;
             }
             if ($desiredQty > $stockInfo['available']) {
                 $desiredQty = $stockInfo['available'];
-                $_SESSION['cart_error'] = "Se ajustó la cantidad de '{$title}' al máximo disponible en almacén ({$stockInfo['available']} unid.).";
+                $noticeMsg = "Se ajustó la cantidad de '{$title}' al máximo disponible en almacén ({$stockInfo['available']} unid.).";
+                if (!$wantsJson) {
+                    $_SESSION['cart_error'] = $noticeMsg;
+                }
             }
         }
 
@@ -410,7 +456,69 @@ class StoreController {
         }
 
         \ShopCMS\Core\Auth::saveCustomerCart();
-        header('Location: ' . (defined('APP_URL') ? APP_URL : '') . '/cart');
+        if ($wantsJson) {
+            header('Content-Type: application/json; charset=utf-8');
+            echo json_encode([
+                'ok' => true,
+                'notice' => $noticeMsg,
+                'basket' => StorefrontExperience::buildSideBasketData(),
+            ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+            exit;
+        }
+        if (!empty($_POST['buy_now'])) {
+            header('Location: ' . $baseUrl . '/checkout');
+            exit;
+        }
+        header('Location: ' . $baseUrl . '/cart');
+        exit;
+    }
+
+    public function cartSideUpdate(): void {
+        header('Content-Type: application/json; charset=utf-8');
+        $baseUrl = defined('APP_URL') ? APP_URL : '';
+        if (!\ShopCMS\Core\Auth::isCustomer()) {
+            http_response_code(401);
+            echo json_encode(['ok' => false, 'require_login' => true, 'login_url' => $baseUrl . '/login?auth_msg=cart']);
+            exit;
+        }
+        \ShopCMS\Core\Auth::ensureIsolatedCartSession();
+
+        $body = json_decode(file_get_contents('php://input') ?: '{}', true);
+        if (!is_array($body)) $body = $_POST;
+        $key = trim((string)($body['key'] ?? ''));
+        $qty = (int)($body['quantity'] ?? 0);
+        $notice = 'Cesta actualizada.';
+
+        if ($key !== '' && isset($_SESSION['cart'][$key])) {
+            if ($qty <= 0) {
+                unset($_SESSION['cart'][$key]);
+                $notice = 'Artículo retirado de tu cesta.';
+            } else {
+                $item = $_SESSION['cart'][$key];
+                $stockInfo = InventoryManager::getAvailableStock((int)$item['product_id'], !empty($item['variant_id']) ? (int)$item['variant_id'] : null);
+                if ($stockInfo['track']) {
+                    if ($stockInfo['available'] <= 0) {
+                        unset($_SESSION['cart'][$key]);
+                        $notice = "'{$item['name']}' se agotó y fue retirado de tu cesta.";
+                    } elseif ($qty > $stockInfo['available']) {
+                        $qty = $stockInfo['available'];
+                        $_SESSION['cart'][$key]['quantity'] = $qty;
+                        $notice = "Cantidad máxima disponible en stock: {$qty}.";
+                    } else {
+                        $_SESSION['cart'][$key]['quantity'] = $qty;
+                    }
+                } else {
+                    $_SESSION['cart'][$key]['quantity'] = $qty;
+                }
+            }
+            \ShopCMS\Core\Auth::saveCustomerCart();
+        }
+
+        echo json_encode([
+            'ok' => true,
+            'notice' => $notice,
+            'basket' => StorefrontExperience::buildSideBasketData(),
+        ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
         exit;
     }
 
@@ -1393,7 +1501,8 @@ class StoreController {
         $products = $this->fetchActiveProductsSummary($ids);
         $cleanIds = array_column($products, 'id');
         Settings::saveMany(['customer_wishlist_' . $uid => json_encode($cleanIds)]);
-        echo json_encode(['ok' => true, 'ids' => $cleanIds, 'products' => $products]);
+        $productHearts = $prodId > 0 ? StorefrontExperience::getProductHeartCount($prodId) : null;
+        echo json_encode(['ok' => true, 'ids' => $cleanIds, 'products' => $products, 'product_hearts' => $productHearts]);
         exit;
     }
 

@@ -112,6 +112,15 @@ $prodBuiltIn = [];
                     <?= $avgRating > 0 ? "{$avgRating} / 5" : 'Sin valoraciones todavía' ?>
                     (<?= $reviewLabel ?>)
                 </span>
+                <?php if (($soldCount ?? 0) > 0): ?>
+                    <span style="color: var(--color-border);">|</span>
+                    <span style="font-size: 13px; color: var(--color-text-light); font-weight: 500;">+<?= \ShopCMS\Core\StorefrontExperience::formatCompactCount((int) $soldCount) ?> vendidos</span>
+                <?php endif; ?>
+                <span style="color: var(--color-border);">|</span>
+                <span style="display: inline-flex; align-items: center; gap: 4px; font-size: 13px; color: var(--color-text-light); font-weight: 600;" title="Clientes que guardaron este producto en favoritos">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="#EF4444" stroke="#EF4444" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
+                    <span id="scms_top_heart_count_<?= (int) $product['id'] ?>"><?= \ShopCMS\Core\StorefrontExperience::formatCompactCount((int) ($heartCount ?? 0)) ?></span>
+                </span>
             </div>
 
             <!-- PRECIO -->
@@ -203,14 +212,18 @@ $prodBuiltIn = [];
                 </div>
 
                 <!-- SELECTOR DE CANTIDAD Y BOTÓN -->
-                <div style="display: flex; gap: 12px; margin-bottom: 24px;">
-                    <input type="number" id="quantity_input" name="quantity" value="1" min="1" max="<?= max(1, $initialQty) ?>" style="width: 80px; padding: 12px; border: 1px solid var(--color-border); border-radius: 8px; text-align: center; font-size: 15px; font-weight: 600;">
+                <div style="display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 24px;">
+                    <input type="number" id="quantity_input" name="quantity" value="1" min="1" max="<?= max(1, $initialQty) ?>" style="width: 78px; padding: 12px; border: 1px solid var(--color-border); border-radius: 8px; text-align: center; font-size: 15px; font-weight: 600;">
                     
-                    <button type="submit" id="submit_cart_btn" class="btn-store btn-store-primary" style="flex: 1; font-size: 16px; padding: 14px;" <?= $initialQty <= 0 ? 'disabled' : '' ?>>
+                    <button type="submit" id="submit_cart_btn" class="btn-store btn-store-primary" style="flex: 1 1 180px; font-size: 15px; padding: 14px;" <?= $initialQty <= 0 ? 'disabled' : '' ?>>
                         <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor" style="margin-right: 8px;">
                             <path d="M3 1a1 1 0 000 2h1.22l.305 1.222a.997.997 0 00.01.042l1.358 5.43-.893.892C3.74 11.846 4.632 14 6.414 14H15a1 1 0 000-2H6.414l1-1H14a1 1 0 00.894-.553l3-6A1 1 0 0017 3H6.28l-.31-1.243A1 1 0 005 1H3zM16 16.5a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0zM6.5 18a1.5 1.5 0 100-3 1.5 1.5 0 000 3z"/>
                         </svg>
                         <span data-theme-field="buy_btn_text"><?= htmlspecialchars($pMain['buy_btn_text'] ?? 'Añadir al Carrito') ?></span>
+                    </button>
+
+                    <button type="submit" id="buy_now_btn" name="buy_now" value="1" data-buy-now="1" class="btn-store" style="flex: 1 1 140px; font-size: 15px; padding: 14px; background: transparent; color: var(--color-primary); border: 1.5px solid var(--color-primary); font-weight: 700; border-radius: 8px;" <?= $initialQty <= 0 ? 'disabled' : '' ?>>
+                        Comprar ahora
                     </button>
                 </div>
 

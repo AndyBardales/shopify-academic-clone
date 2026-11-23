@@ -194,6 +194,7 @@ Router::get('/robots.txt', [StoreController::class, 'robotsTxt']);
 Router::get('/cart', [StoreController::class, 'cart']);
 Router::post('/cart/add', [StoreController::class, 'cartAdd']);
 Router::post('/cart/update', [StoreController::class, 'cartUpdate']);
+Router::post('/cart/side-update', [StoreController::class, 'cartSideUpdate']);
 Router::post('/cart/remove/{itemKey}', [StoreController::class, 'cartRemove']);
 Router::post('/cart/apply-coupon', [StoreController::class, 'applyCoupon']);
 Router::post('/cart/remove-coupon', [StoreController::class, 'removeCoupon']);
