@@ -78,7 +78,7 @@ PluginManager::addAction('product_page_buttons', function ($product) {
             <span>Compartir</span>
         </button>
         <button type="button" onclick="toggleWishlist(' . $prodId . ')" id="wishlist_btn_' . $prodId . '" class="btn-store btn-store-secondary" style="width: 100%; padding: 10px 12px; font-size: 13.5px; display: flex; align-items: center; justify-content: center; gap: 7px;">
-            <svg id="wishlist_icon_' . $prodId . '" width="16" height="16" viewBox="0 0 24 24" fill="' . ($isSaved ? '#D72C0D' : 'none') . '" stroke="' . ($isSaved ? '#D72C0D' : 'currentColor') . '" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <svg id="wishlist_icon_' . $prodId . '" width="16" height="16" viewBox="0 0 24 24" fill="' . ($isSaved ? 'var(--color-primary, #008060)' : 'none') . '" stroke="' . ($isSaved ? 'var(--color-primary, #008060)' : 'currentColor') . '" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path>
             </svg>
             <span id="wishlist_text_' . $prodId . '" style="display:none;">' . ($isSaved ? 'Guardado en tus Favoritos' : 'Guardar en Lista de Deseos') . '</span>
@@ -138,37 +138,38 @@ PluginManager::addAction('theme_footer', function () {
     }
 
     echo '
-    <!-- BOTÓN FLOTANTE DE WISHLIST (SOLO USUARIO AUTENTICADO) -->
-    <button type="button" id="scms-wishlist-fab" onclick="openWishlistModal(false)" style="display: ' . (count($initialItems) > 0 ? 'inline-flex' : 'none') . '; position: fixed; bottom: ' . $waBottom . '; right: 20px; z-index: 985; background: #FFFFFF; color: #111827; border: 1px solid #E5E7EB; border-radius: 999px; padding: 10px 15px; align-items: center; gap: 7px; font-size: 13px; font-weight: 700; cursor: pointer; box-shadow: 0 6px 18px rgba(0,0,0,0.12);">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="#DC2626" stroke="#DC2626" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
-        <span>Favoritos (<span id="scms-wishlist-count">' . count($initialItems) . '</span>)</span>
+    <!-- BOTÓN DE WISHLIST INTEGRADO EN CABECERA / RESPONSIVO MÓVIL (SOLO USUARIO AUTENTICADO) -->
+    <button type="button" id="scms-wishlist-fab" class="scms-wishlist-fab" onclick="openWishlistModal(false)" style="display: ' . (count($initialItems) > 0 ? 'inline-flex' : 'none') . ';" aria-label="Favoritos">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="var(--color-primary, #008060)" stroke="var(--color-primary, #008060)" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
+        <span class="scms-wishlist-label">Favoritos</span>
+        <span id="scms-wishlist-count" class="scms-wishlist-badge">' . count($initialItems) . '</span>
     </button>
 
     <!-- MODAL DE LISTA DE DESEOS -->
-    <div id="scms-wishlist-modal" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.55); z-index: 10020; align-items: center; justify-content: center; padding: 20px;">
-        <div style="background: #FFFFFF; max-width: 620px; width: 100%; border-radius: 14px; padding: 24px; box-shadow: 0 20px 44px rgba(0,0,0,0.25); max-height: 88vh; overflow-y: auto;">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; border-bottom: 1px solid #E5E7EB; padding-bottom: 12px;">
+    <div id="scms-wishlist-modal" style="display: none; position: fixed; inset: 0; background: rgba(15,23,42,0.55); z-index: 10020; align-items: center; justify-content: center; padding: 20px;">
+        <div style="background: var(--color-surface, #FFFFFF); color: var(--color-text, #111827); border: 1px solid var(--color-border, #E5E7EB); max-width: 620px; width: 100%; border-radius: 14px; padding: 24px; box-shadow: 0 20px 44px rgba(0,0,0,0.25); max-height: 88vh; overflow-y: auto;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; border-bottom: 1px solid var(--color-border, #E5E7EB); padding-bottom: 12px;">
                 <div>
-                    <h3 id="scms-wishlist-modal-title" style="font-size: 18px; font-weight: 700; margin: 0; color: #111827;">Mi Lista de Deseos</h3>
-                    <div id="scms-wishlist-modal-sub" style="font-size: 12px; color: #6B7280; margin-top: 2px;">Tus productos favoritos guardados de forma privada en tu cuenta.</div>
+                    <h3 id="scms-wishlist-modal-title" style="font-size: 18px; font-weight: 700; margin: 0; color: var(--color-text, #111827);">Mi Lista de Deseos</h3>
+                    <div id="scms-wishlist-modal-sub" style="font-size: 12px; color: var(--color-text-light, var(--color-text-muted, #6B7280)); margin-top: 2px;">Tus productos favoritos guardados de forma privada en tu cuenta.</div>
                 </div>
-                <button type="button" onclick="closeWishlistModal()" style="border: none; background: transparent; font-size: 22px; cursor: pointer; color: #6B7280;">&times;</button>
+                <button type="button" onclick="closeWishlistModal()" style="border: none; background: transparent; font-size: 22px; cursor: pointer; color: var(--color-text-light, #6B7280);">&times;</button>
             </div>
 
             <div id="scms-wishlist-items"></div>
 
-            <div id="scms-wishlist-share-bar" style="margin-top: 18px; padding-top: 14px; border-top: 1px solid #E5E7EB; display: flex; gap: 8px; flex-wrap: wrap; align-items: center;">
-                <button type="button" onclick="copyWishlistShareLink()" style="flex: 1; background: #008060; color: #FFFFFF; border: none; border-radius: 7px; padding: 9px 14px; font-size: 12.5px; font-weight: 700; cursor: pointer;">
+            <div id="scms-wishlist-share-bar" style="margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--color-border, #E5E7EB); display: flex; gap: 8px; flex-wrap: wrap; align-items: center;">
+                <button type="button" onclick="copyWishlistShareLink()" style="flex: 1; background: var(--color-primary, #008060); color: #FFFFFF; border: none; border-radius: 7px; padding: 9px 14px; font-size: 12.5px; font-weight: 700; cursor: pointer;">
                     Copiar enlace para compartir
                 </button>
                 <a id="scms-wishlist-wa-share" href="#" target="_blank" rel="noopener" style="background: #16A34A; color: #FFFFFF; border-radius: 7px; padding: 9px 14px; font-size: 12.5px; font-weight: 700; text-decoration: none;">
                     Compartir por WhatsApp
                 </a>
-                <button type="button" onclick="clearWishlistAll()" style="background: #F3F4F6; color: #374151; border: 1px solid #D1D5DB; border-radius: 7px; padding: 9px 12px; font-size: 12.5px; font-weight: 600; cursor: pointer;">
+                <button type="button" onclick="clearWishlistAll()" style="background: var(--color-bg, #F3F4F6); color: var(--color-text, #374151); border: 1px solid var(--color-border, #D1D5DB); border-radius: 7px; padding: 9px 12px; font-size: 12.5px; font-weight: 600; cursor: pointer;">
                     Vaciar
                 </button>
             </div>
-            <div id="scms-wishlist-feedback" style="display: none; margin-top: 10px; font-size: 12px; color: #047857; font-weight: 600; background: #ECFDF5; padding: 8px 10px; border-radius: 6px;"></div>
+            <div id="scms-wishlist-feedback" style="display: none; margin-top: 10px; font-size: 12px; color: var(--color-primary, #047857); font-weight: 600; background: var(--color-bg, #ECFDF5); border: 1px solid var(--color-border, #A7F3D0); padding: 8px 10px; border-radius: 6px;"></div>
         </div>
     </div>
 
@@ -181,6 +182,24 @@ PluginManager::addAction('theme_footer', function () {
 
         var BASE = ' . json_encode($baseUrl) . ';
         var wishlistProducts = ' . json_encode($initialItems, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) . ';
+
+        function mountWishlistInHeader() {
+            var fab = document.getElementById("scms-wishlist-fab");
+            if (!fab) return;
+            var actions = document.querySelector("header.site-header .header-actions");
+            var cartBtn = actions ? actions.querySelector(".cart-button") : null;
+            if (actions && cartBtn) {
+                fab.classList.add("in-header");
+                var cs = window.getComputedStyle(cartBtn);
+                if (cs) {
+                    fab.style.background = cs.backgroundColor;
+                    fab.style.color = cs.color;
+                    fab.style.borderColor = cs.borderColor;
+                    fab.style.borderRadius = cs.borderRadius;
+                }
+                actions.insertBefore(fab, cartBtn);
+            }
+        }
 
         function esc(s) {
             return String(s || "").replace(/[&<>"\x27]/g, function(m) {
@@ -196,8 +215,8 @@ PluginManager::addAction('theme_footer', function () {
                 var saved = ids.indexOf(pid) !== -1;
                 span.innerText = saved ? "Guardado en tus Favoritos" : "Guardar en Lista de Deseos";
                 if (icon) {
-                    icon.setAttribute("fill", saved ? "#D72C0D" : "none");
-                    icon.setAttribute("stroke", saved ? "#D72C0D" : "currentColor");
+                    icon.setAttribute("fill", saved ? "var(--color-primary, #008060)" : "none");
+                    icon.setAttribute("stroke", saved ? "var(--color-primary, #008060)" : "currentColor");
                 }
             });
         }
@@ -265,17 +284,19 @@ PluginManager::addAction('theme_footer', function () {
                     ? "<img src=\'" + esc(p.image) + "\' style=\'width:54px;height:54px;object-fit:cover;border-radius:8px;border:1px solid #E5E7EB;\'>"
                     : "<div style=\'width:54px;height:54px;border-radius:8px;background:#F3F4F6;\'></div>";
                 var removeBtn = isSharedMode
-                    ? "<button type=\'button\' onclick=\'saveSharedItem(" + Number(p.id) + ")\' style=\'background:#F3F4F6;border:1px solid #D1D5DB;border-radius:6px;padding:6px 10px;font-size:12px;font-weight:600;cursor:pointer;\'>Guardar</button>"
-                    : "<button type=\'button\' onclick=\'removeWishlistItem(" + Number(p.id) + ")\' style=\'background:#FEF2F2;color:#DC2626;border:1px solid #FECACA;border-radius:6px;padding:6px 10px;font-size:12px;font-weight:600;cursor:pointer;\'>Quitar</button>";
+                    ? "<button type=\'button\' onclick=\'saveSharedItem(" + Number(p.id) + ")\' style=\'background:var(--color-surface,#F3F4F6);color:var(--color-text,#111827);border:1px solid var(--color-border,#D1D5DB);border-radius:6px;padding:6px 10px;font-size:12px;font-weight:600;cursor:pointer;\'>Guardar</button>"
+                    : "<button type=\'button\' onclick=\'removeWishlistItem(" + Number(p.id) + ")\' style=\'background:var(--color-surface,#F3F4F6);color:var(--color-text,#374151);border:1px solid var(--color-border,#D1D5DB);border-radius:6px;padding:6px 10px;font-size:12px;font-weight:600;cursor:pointer;\'>Quitar</button>";
 
-                return "<div style=\'display:flex;align-items:center;gap:12px;padding:10px;border:1px solid #E5E7EB;border-radius:10px;margin-bottom:10px;\'>"
+                return "<div class=\'scms-wishlist-item-row\'>"
                     + imgHtml
-                    + "<div style=\'flex:1;\'>"
-                    + "<div style=\'font-weight:700;font-size:14px;color:#111827;\'>" + esc(p.name) + "</div>"
-                    + "<div style=\'font-size:13px;font-weight:700;color:#008060;\'>" + esc(p.currency || "$") + Number(p.price || 0).toFixed(2) + "</div>"
+                    + "<div style=\'flex:1;min-width:0;\'>"
+                    + "<div style=\'font-weight:700;font-size:14px;color:var(--color-text,#111827);word-break:break-word;\'>" + esc(p.name) + "</div>"
+                    + "<div style=\'font-size:13px;font-weight:700;color:var(--color-primary,#008060);\'>" + esc(p.currency || "$") + Number(p.price || 0).toFixed(2) + "</div>"
                     + "</div>"
-                    + "<a href=\'" + esc(p.url) + "\' style=\'background:#111827;color:#FFF;padding:6px 12px;border-radius:6px;font-size:12px;font-weight:600;text-decoration:none;\'>Ver</a>"
+                    + "<div class=\'scms-wishlist-item-actions\'>"
+                    + "<a href=\'" + esc(p.url) + "\' style=\'background:var(--color-primary,#008060);color:#FFF;padding:6px 12px;border-radius:6px;font-size:12px;font-weight:600;text-decoration:none;\'>Ver</a>"
                     + removeBtn
+                    + "</div>"
                     + "</div>";
             }).join("");
         }
@@ -344,6 +365,7 @@ PluginManager::addAction('theme_footer', function () {
         };
 
         document.addEventListener("DOMContentLoaded", function() {
+            mountWishlistInHeader();
             updateFab();
             var params = new URLSearchParams(window.location.search);
             var shared = params.get("wishlist");

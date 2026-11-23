@@ -198,6 +198,19 @@ class StorefrontExperience {
             </div>
             <div id="scms-sb-items" class="scms-sb-items"></div>
         </aside>
+        <div id="scms-sb-confirm-modal" class="scms-sb-confirm-backdrop" role="dialog" aria-modal="true" aria-labelledby="scms-sb-confirm-title" style="display: none;">
+            <div class="scms-sb-confirm-card">
+                <div class="scms-sb-confirm-head">
+                    <h4 id="scms-sb-confirm-title" class="scms-sb-confirm-title">Quitar artículo</h4>
+                    <button type="button" id="scms-sb-confirm-close" class="scms-sb-confirm-close" aria-label="Cerrar">&times;</button>
+                </div>
+                <p id="scms-sb-confirm-msg" class="scms-sb-confirm-msg">¿Quieres quitar este producto de tu cesta?</p>
+                <div class="scms-sb-confirm-actions">
+                    <button type="button" id="scms-sb-confirm-cancel" class="scms-sb-confirm-btn scms-sb-confirm-cancel">Cancelar</button>
+                    <button type="button" id="scms-sb-confirm-ok" class="scms-sb-confirm-btn scms-sb-confirm-ok">Quitar</button>
+                </div>
+            </div>
+        </div>
         <div id="scms-sb-toast" class="scms-sb-toast" role="status" aria-live="polite"></div>
         <?php
         return ob_get_clean();

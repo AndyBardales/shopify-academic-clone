@@ -921,9 +921,9 @@
                             '</a>' +
                             '<div class="scms-sb-item-price">' + escHtml(priceText) + '</div>' +
                             '<div class="scms-sb-stepper">' +
-                                '<button type="button" class="scms-sb-step-btn" data-step="-1" data-key="' + escHtml(item.key) + '" data-qty="' + qtyVal + '" aria-label="Disminuir cantidad">-</button>' +
+                                '<button type="button" class="scms-sb-step-btn" data-step="-1" data-key="' + escHtml(item.key) + '" data-qty="' + qtyVal + '" data-name="' + escHtml(item.name) + '" aria-label="Disminuir cantidad">-</button>' +
                                 '<span class="scms-sb-qty">' + qtyVal + '</span>' +
-                                '<button type="button" class="scms-sb-step-btn" data-step="1" data-key="' + escHtml(item.key) + '" data-qty="' + qtyVal + '"' + (maxReached ? ' disabled style="opacity:0.45;cursor:not-allowed;"' : '') + ' aria-label="Aumentar cantidad">+</button>' +
+                                '<button type="button" class="scms-sb-step-btn" data-step="1" data-key="' + escHtml(item.key) + '" data-qty="' + qtyVal + '" data-name="' + escHtml(item.name) + '"' + (maxReached ? ' disabled style="opacity:0.45;cursor:not-allowed;"' : '') + ' aria-label="Aumentar cantidad">+</button>' +
                             '</div>' +
                         '</div>'
                     );
@@ -964,6 +964,54 @@
             renderBasket({ has_items: false, items: [] });
         }
 
+        // Confirmation modal helpers for removing last unit (qty === 1 -> 0)
+        const confirmModal = document.getElementById('scms-sb-confirm-modal');
+        const confirmMsgEl = document.getElementById('scms-sb-confirm-msg');
+        const confirmOkBtn = document.getElementById('scms-sb-confirm-ok');
+        const confirmCancelBtn = document.getElementById('scms-sb-confirm-cancel');
+        const confirmCloseBtn = document.getElementById('scms-sb-confirm-close');
+        let pendingRemoveKey = '';
+
+        function openRemoveConfirm(key, productName) {
+            if (!confirmModal) {
+                updateSideItem(key, 0);
+                return;
+            }
+            pendingRemoveKey = key;
+            if (confirmMsgEl) {
+                confirmMsgEl.textContent = productName
+                    ? ('¿Deseas quitar "' + productName + '" de tu cesta?')
+                    : '¿Deseas quitar este producto de tu cesta?';
+            }
+            confirmModal.style.display = 'flex';
+            if (confirmCancelBtn) confirmCancelBtn.focus();
+        }
+
+        function closeRemoveConfirm() {
+            pendingRemoveKey = '';
+            if (confirmModal) confirmModal.style.display = 'none';
+        }
+
+        if (confirmCancelBtn) confirmCancelBtn.addEventListener('click', closeRemoveConfirm);
+        if (confirmCloseBtn) confirmCloseBtn.addEventListener('click', closeRemoveConfirm);
+        if (confirmModal) {
+            confirmModal.addEventListener('click', function(e) {
+                if (e.target === confirmModal) closeRemoveConfirm();
+            });
+        }
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape' && confirmModal && confirmModal.style.display === 'flex') {
+                closeRemoveConfirm();
+            }
+        });
+        if (confirmOkBtn) {
+            confirmOkBtn.addEventListener('click', function() {
+                const key = pendingRemoveKey;
+                closeRemoveConfirm();
+                if (key) updateSideItem(key, 0);
+            });
+        }
+
         // Handle +/- stepper buttons inside side basket
         aside.addEventListener('click', function(e) {
             const btn = e.target.closest('.scms-sb-step-btn');
@@ -971,6 +1019,11 @@
             const key = btn.getAttribute('data-key') || '';
             const curQty = parseInt(btn.getAttribute('data-qty') || '1', 10) || 1;
             const step = parseInt(btn.getAttribute('data-step') || '0', 10) || 0;
+            const prodName = btn.getAttribute('data-name') || '';
+            if (step < 0 && curQty <= 1) {
+                openRemoveConfirm(key, prodName);
+                return;
+            }
             const nextQty = Math.max(0, curQty + step);
             updateSideItem(key, nextQty);
         });
