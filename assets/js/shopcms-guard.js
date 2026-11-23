@@ -249,7 +249,6 @@
         let customTitle = 'Guardando Registro...';
         let customDesc = 'Procesando los datos enviados. Por favor espera, las opciones de navegación se encuentran deshabilitadas.';
 
-        const action = (form.action || '').toLowerCase();
         if (action.includes('checkout') || action.includes('order')) {
             customTitle = 'Procesando Pedido y Pago...';
             customDesc = 'Generando orden de compra y procesando transacción. Por favor, no cierres ni recargues la página.';

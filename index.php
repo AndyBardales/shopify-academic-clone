@@ -169,10 +169,21 @@ Router::post('/admin/themes/customize/{slug}/upload-asset', [AdminController::cl
 Router::get('/admin/settings', [AdminController::class, 'settings']);
 Router::post('/admin/settings/save', [AdminController::class, 'settingsSave']);
 
+// Páginas Legales / CMS y Suscriptores Newsletter
+Router::get('/admin/pages', [AdminController::class, 'pages']);
+Router::post('/admin/pages/store', [AdminController::class, 'pageStore']);
+Router::post('/admin/pages/update/{id}', [AdminController::class, 'pageUpdate']);
+Router::get('/admin/pages/delete/{id}', [AdminController::class, 'pageDelete']);
+Router::get('/admin/pages/seed-legal', [AdminController::class, 'pageSeedLegal']);
+Router::get('/admin/newsletter/export', [AdminController::class, 'newsletterExport']);
+Router::get('/admin/newsletter/delete/{id}', [AdminController::class, 'newsletterDelete']);
+
 // --- Rutas de la Tienda (Storefront / Minimal Shop) ---
 Router::get('/', [StoreController::class, 'home']);
 Router::get('/catalog', [StoreController::class, 'catalog']);
 Router::get('/product/{slug}', [StoreController::class, 'product']);
+Router::get('/page/{slug}', [StoreController::class, 'page']);
+Router::post('/newsletter/subscribe', [StoreController::class, 'newsletterSubscribe']);
 
 // MÃ³dulo 2: Carrito y Checkout
 Router::get('/cart', [StoreController::class, 'cart']);

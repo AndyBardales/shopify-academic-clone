@@ -925,6 +925,18 @@ class ThemeCustomizer {
         $col1Links = self::parseFooterLinks((string)($f['col1_links'] ?? ''), $baseUrl, $hideGuestAuthLinks);
         $col2Links = self::parseFooterLinks((string)($f['col2_links'] ?? ''), $baseUrl, $hideGuestAuthLinks);
 
+        // Agregar páginas CMS/legales publicadas con "Mostrar en footer" si aún no figuran en col2
+        if (!self::isEditorPreview()) {
+            $existingHrefs = array_map(fn($l) => rtrim($l['href'], '/'), array_merge($col1Links, $col2Links));
+            foreach (ContentManager::getFooterPages() as $fp) {
+                $pHref = rtrim($baseUrl, '/') . '/page/' . ltrim((string)$fp['slug'], '/');
+                if (!in_array(rtrim($pHref, '/'), $existingHrefs, true)) {
+                    $col2Links[] = ['label' => (string)$fp['title'], 'href' => $pHref];
+                    $existingHrefs[] = rtrim($pHref, '/');
+                }
+            }
+        }
+
         $storePhone = trim(Settings::get('store_phone', ''));
         $storeEmail = trim(Settings::get('store_email', ''));
         $storeAddress = trim(Settings::get('store_address', ''));
@@ -1005,11 +1017,53 @@ class ThemeCustomizer {
                     <div class="scms-footer-newsletter" style="<?= !empty($f['show_newsletter']) ? '' : 'display:none;' ?>">
                         <h5 style="font-size: 13px; text-transform: uppercase; letter-spacing: 0.6px; font-weight: 700; margin: 0 0 8px; color: <?= htmlspecialchars($accent) ?>;" data-footer-field="newsletter_title"><?= htmlspecialchars($f['newsletter_title'] ?? 'Novedades y Ofertas') ?></h5>
                         <p style="opacity: 0.85; line-height: 1.45; margin: 0 0 10px; font-size: 12.5px;" data-footer-field="newsletter_subtitle"><?= htmlspecialchars($f['newsletter_subtitle'] ?? '') ?></p>
-                        <form onsubmit="event.preventDefault(); this.querySelector('.scms-fnl-msg').style.display='block'; this.reset();" style="display: flex; gap: 6px; flex-wrap: wrap;">
-                            <input type="email" required class="scms-footer-nl-input" placeholder="<?= htmlspecialchars($f['newsletter_placeholder'] ?? 'Tu correo') ?>" style="flex: 1; min-width: 140px; padding: 8px 10px; border-radius: 6px; border: 1px solid rgba(148, 163, 184, 0.45); font-size: 12.5px; background: rgba(255,255,255,0.92); color: #111827;">
+                        <form onsubmit="return scmsSubmitFooterNewsletter(this);" style="display: flex; gap: 6px; flex-wrap: wrap;">
+                            <input type="email" name="email" required class="scms-footer-nl-input" placeholder="<?= htmlspecialchars($f['newsletter_placeholder'] ?? 'Tu correo') ?>" style="flex: 1; min-width: 140px; padding: 8px 10px; border-radius: 6px; border: 1px solid rgba(148, 163, 184, 0.45); font-size: 12.5px; background: rgba(255,255,255,0.92); color: #111827;">
                             <button type="submit" class="scms-footer-nl-btn" style="background: <?= htmlspecialchars($accent) ?>; color: #FFFFFF; border: none; border-radius: 6px; padding: 8px 14px; font-size: 12.5px; font-weight: 700; cursor: pointer;" data-footer-field="newsletter_btn_text"><?= htmlspecialchars($f['newsletter_btn_text'] ?? 'Suscribirme') ?></button>
-                            <div class="scms-fnl-msg" style="display: none; width: 100%; font-size: 11.5px; color: #10B981; margin-top: 4px; font-weight: 600;">¡Suscripción registrada!</div>
+                            <div class="scms-fnl-msg" style="display: none; width: 100%; font-size: 11.5px; color: #10B981; margin-top: 4px; font-weight: 600;"></div>
                         </form>
+                        <script>
+                        if (typeof window.scmsSubmitFooterNewsletter !== 'function') {
+                            window.scmsSubmitFooterNewsletter = async function(form) {
+                                var emailInp = form.querySelector('input[type="email"]');
+                                var btn = form.querySelector('button[type="submit"]');
+                                var msg = form.querySelector('.scms-fnl-msg');
+                                var email = emailInp ? emailInp.value.trim() : '';
+                                if (!email) return false;
+                                if (btn) btn.disabled = true;
+                                try {
+                                    var meta = document.querySelector('meta[name="csrf-token"]');
+                                    var headers = { 'Content-Type': 'application/json' };
+                                    if (meta && meta.getAttribute('content')) {
+                                        headers['X-CSRF-Token'] = meta.getAttribute('content');
+                                    }
+                                    var res = await fetch(<?= json_encode(rtrim($baseUrl, '/') . '/newsletter/subscribe') ?>, {
+                                        method: 'POST',
+                                        headers: headers,
+                                        body: JSON.stringify({ email: email, source: 'footer' })
+                                    });
+                                    var data = await res.json();
+                                    if (msg) {
+                                        msg.textContent = (data && data.message) ? data.message : (res.ok ? '¡Suscripción registrada!' : 'No se pudo registrar.');
+                                        msg.style.color = (data && data.ok) ? '#10B981' : '#EF4444';
+                                        msg.style.display = 'block';
+                                    }
+                                    if (data && data.ok && !data.duplicate && emailInp) {
+                                        form.reset();
+                                    }
+                                } catch (e) {
+                                    if (msg) {
+                                        msg.textContent = 'Error de conexión al suscribirte. Intenta nuevamente.';
+                                        msg.style.color = '#EF4444';
+                                        msg.style.display = 'block';
+                                    }
+                                } finally {
+                                    if (btn) btn.disabled = false;
+                                }
+                                return false;
+                            };
+                        }
+                        </script>
                     </div>
                 </div>
 

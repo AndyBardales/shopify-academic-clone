@@ -246,5 +246,27 @@ CREATE TABLE IF NOT EXISTS `{prefix}inventory_movements` (
     FOREIGN KEY (`product_id`) REFERENCES `{prefix}products`(`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- 18. Páginas Informativas / Legales CMS
+CREATE TABLE IF NOT EXISTS `{prefix}pages` (
+    `id` INT AUTO_INCREMENT PRIMARY KEY,
+    `title` VARCHAR(180) NOT NULL,
+    `slug` VARCHAR(180) NOT NULL UNIQUE,
+    `content` LONGTEXT NOT NULL,
+    `is_published` TINYINT(1) NOT NULL DEFAULT 1,
+    `show_in_footer` TINYINT(1) NOT NULL DEFAULT 1,
+    `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+    `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- 19. Suscriptores del Boletín (Newsletter)
+CREATE TABLE IF NOT EXISTS `{prefix}newsletter_subscribers` (
+    `id` INT AUTO_INCREMENT PRIMARY KEY,
+    `email` VARCHAR(180) NOT NULL UNIQUE,
+    `customer_id` INT NULL,
+    `source` VARCHAR(60) NOT NULL DEFAULT 'footer',
+    `status` ENUM('active', 'unsubscribed') NOT NULL DEFAULT 'active',
+    `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 SET FOREIGN_KEY_CHECKS = 1;
 

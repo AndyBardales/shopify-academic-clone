@@ -1365,5 +1365,56 @@ class StoreController {
         ]);
         exit;
     }
+
+    // ==========================================
+    // PÁGINAS CMS / LEGALES Y NEWSLETTER EN BD
+    // ==========================================
+    public function page(string $slug): void {
+        \ShopCMS\Core\ContentManager::ensureSchema();
+        $cleanSlug = trim($slug);
+        $page = Database::fetch(
+            "SELECT * FROM " . Database::table('pages') . " WHERE slug = ? AND (is_published = 1 OR ? = 1)",
+            [$cleanSlug, \ShopCMS\Core\Auth::isAdmin() ? 1 : 0]
+        );
+
+        if (!$page) {
+            http_response_code(404);
+            ThemeManager::render('page', [
+                'page' => null,
+                'pageTitle' => 'Página no encontrada',
+                'currency' => $this->getCurrency(),
+            ]);
+            return;
+        }
+
+        ThemeManager::render('page', [
+            'page' => $page,
+            'pageTitle' => $page['title'],
+            'currency' => $this->getCurrency(),
+        ]);
+    }
+
+    public function newsletterSubscribe(): void {
+        header('Content-Type: application/json; charset=utf-8');
+        $raw = file_get_contents('php://input');
+        $body = json_decode($raw ?: '{}', true);
+        if (!is_array($body) || empty($body)) {
+            $body = $_POST;
+        }
+        $email = trim((string)($body['email'] ?? ''));
+        $source = preg_replace('/[^a-zA-Z0-9_-]/', '', (string)($body['source'] ?? 'footer')) ?: 'footer';
+        $customerId = \ShopCMS\Core\Auth::isCustomer() ? (int)\ShopCMS\Core\Auth::customer()['id'] : null;
+
+        $res = \ShopCMS\Core\ContentManager::subscribeEmail($email, $customerId, $source);
+        if (!$res['ok']) {
+            http_response_code(400);
+        }
+        echo json_encode([
+            'ok' => $res['ok'],
+            'duplicate' => $res['duplicate'],
+            'message' => $res['message'],
+        ], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
 }
 

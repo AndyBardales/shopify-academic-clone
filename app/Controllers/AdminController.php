@@ -2436,5 +2436,145 @@ class AdminController {
         header('Location: ' . (defined('APP_URL') ? APP_URL : '') . '/admin/customers');
         exit;
     }
+
+    // ==========================================
+    // PÁGINAS LEGALES CMS & NEWSLETTER
+    // ==========================================
+    public function pages(): void {
+        \ShopCMS\Core\ContentManager::ensureSchema();
+        $pages = \ShopCMS\Core\ContentManager::getAllPages();
+        $subscribers = \ShopCMS\Core\ContentManager::getSubscribers();
+        $editingPage = null;
+        if (!empty($_GET['edit'])) {
+            $editingPage = Database::fetch("SELECT * FROM " . Database::table('pages') . " WHERE id = ?", [(int)$_GET['edit']]);
+        }
+
+        $this->render('pages/index', [
+            'pageTitle' => 'Páginas Legales y Boletín',
+            'pages' => $pages,
+            'subscribers' => $subscribers,
+            'editingPage' => $editingPage,
+        ]);
+    }
+
+    public function pageStore(): void {
+        \ShopCMS\Core\ContentManager::ensureSchema();
+        $title = trim($_POST['title'] ?? '');
+        $rawSlug = trim($_POST['slug'] ?? '');
+        $content = trim($_POST['content'] ?? '');
+        $isPublished = !empty($_POST['is_published']) ? 1 : 0;
+        $showInFooter = !empty($_POST['show_in_footer']) ? 1 : 0;
+
+        if ($title === '' || $content === '') {
+            $_SESSION['flash_error'] = 'El título y contenido de la página son obligatorios.';
+            header('Location: ' . (defined('APP_URL') ? APP_URL : '') . '/admin/pages');
+            exit;
+        }
+
+        $slug = \ShopCMS\Core\ContentManager::slugify($rawSlug !== '' ? $rawSlug : $title);
+        $dup = Database::fetch("SELECT id FROM " . Database::table('pages') . " WHERE slug = ?", [$slug]);
+        if ($dup) {
+            $slug .= '-' . substr(uniqid(), -4);
+        }
+
+        Database::insert('pages', [
+            'title' => $title,
+            'slug' => $slug,
+            'content' => $content,
+            'is_published' => $isPublished,
+            'show_in_footer' => $showInFooter,
+        ]);
+
+        $_SESSION['flash_success'] = "Página '{$title}' publicada en /page/{$slug}.";
+        header('Location: ' . (defined('APP_URL') ? APP_URL : '') . '/admin/pages');
+        exit;
+    }
+
+    public function pageUpdate(string $id): void {
+        \ShopCMS\Core\ContentManager::ensureSchema();
+        $pageId = (int)$id;
+        $existing = Database::fetch("SELECT * FROM " . Database::table('pages') . " WHERE id = ?", [$pageId]);
+        if (!$existing) {
+            $_SESSION['flash_error'] = 'Página no encontrada.';
+            header('Location: ' . (defined('APP_URL') ? APP_URL : '') . '/admin/pages');
+            exit;
+        }
+
+        $title = trim($_POST['title'] ?? '');
+        $rawSlug = trim($_POST['slug'] ?? '');
+        $content = trim($_POST['content'] ?? '');
+        $isPublished = !empty($_POST['is_published']) ? 1 : 0;
+        $showInFooter = !empty($_POST['show_in_footer']) ? 1 : 0;
+
+        if ($title === '' || $content === '') {
+            $_SESSION['flash_error'] = 'El título y contenido son obligatorios.';
+            header('Location: ' . (defined('APP_URL') ? APP_URL : '') . '/admin/pages?edit=' . $pageId);
+            exit;
+        }
+
+        $slug = \ShopCMS\Core\ContentManager::slugify($rawSlug !== '' ? $rawSlug : $title);
+        $dup = Database::fetch("SELECT id FROM " . Database::table('pages') . " WHERE slug = ? AND id != ?", [$slug, $pageId]);
+        if ($dup) {
+            $slug .= '-' . $pageId;
+        }
+
+        Database::update('pages', [
+            'title' => $title,
+            'slug' => $slug,
+            'content' => $content,
+            'is_published' => $isPublished,
+            'show_in_footer' => $showInFooter,
+        ], 'id = :id', ['id' => $pageId]);
+
+        $_SESSION['flash_success'] = "Página '{$title}' actualizada correctamente.";
+        header('Location: ' . (defined('APP_URL') ? APP_URL : '') . '/admin/pages');
+        exit;
+    }
+
+    public function pageDelete(string $id): void {
+        \ShopCMS\Core\ContentManager::ensureSchema();
+        Database::delete('pages', 'id = ?', [(int)$id]);
+        $_SESSION['flash_success'] = 'Página eliminada correctamente.';
+        header('Location: ' . (defined('APP_URL') ? APP_URL : '') . '/admin/pages');
+        exit;
+    }
+
+    public function pageSeedLegal(): void {
+        $storeName = Settings::get('store_name', 'Nuestra Tienda');
+        $created = \ShopCMS\Core\ContentManager::seedRecommendedLegalPages($storeName);
+        $_SESSION['flash_success'] = $created > 0
+            ? "Se generaron {$created} páginas legales recomendadas y ya aparecen en el footer."
+            : 'Todas las plantillas legales recomendadas ya estaban creadas.';
+        header('Location: ' . (defined('APP_URL') ? APP_URL : '') . '/admin/pages');
+        exit;
+    }
+
+    public function newsletterExport(): void {
+        $subscribers = \ShopCMS\Core\ContentManager::getSubscribers();
+        header('Content-Type: text/csv; charset=utf-8');
+        header('Content-Disposition: attachment; filename="suscriptores-newsletter-' . date('Ymd-His') . '.csv"');
+        echo "\xEF\xBB\xBF";
+        $out = fopen('php://output', 'w');
+        fputcsv($out, ['ID', 'Email', 'Origen', 'Estado', 'Fecha Registro']);
+        foreach ($subscribers as $s) {
+            fputcsv($out, [
+                $s['id'],
+                $s['email'],
+                $s['source'] ?? 'footer',
+                $s['status'] ?? 'active',
+                $s['created_at'] ?? '',
+            ]);
+        }
+        fclose($out);
+        exit;
+    }
+
+    public function newsletterDelete(string $id): void {
+        \ShopCMS\Core\ContentManager::ensureSchema();
+        Database::delete('newsletter_subscribers', 'id = ?', [(int)$id]);
+        $_SESSION['flash_success'] = 'Suscriptor eliminado del boletín.';
+        header('Location: ' . (defined('APP_URL') ? APP_URL : '') . '/admin/pages');
+        exit;
+    }
 }
 
