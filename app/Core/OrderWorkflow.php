@@ -245,4 +245,85 @@ class OrderWorkflow {
 
         return false;
     }
+
+    private static bool $proofSchemaChecked = false;
+
+    public static function ensurePaymentProofSchema(): void {
+        if (self::$proofSchemaChecked) {
+            return;
+        }
+        self::$proofSchemaChecked = true;
+        try {
+            $pdo = Database::getInstance();
+            $table = Database::table('orders');
+            $hasProof = $pdo->query("SHOW COLUMNS FROM {$table} LIKE 'payment_proof'")->fetch();
+            if (!$hasProof) {
+                $pdo->exec("ALTER TABLE {$table} ADD COLUMN `payment_proof` VARCHAR(255) NULL AFTER `payment_status`");
+            }
+            $hasRef = $pdo->query("SHOW COLUMNS FROM {$table} LIKE 'payment_reference'")->fetch();
+            if (!$hasRef) {
+                $pdo->exec("ALTER TABLE {$table} ADD COLUMN `payment_reference` VARCHAR(120) NULL AFTER `payment_proof`");
+            }
+        } catch (\Throwable $e) {
+            // Ignorar si BD no responde en pruebas aisladas
+        }
+    }
+
+    /**
+     * Valida y guarda un archivo de voucher/comprobante de pago (JPG, PNG, WebP o PDF hasta 5MB).
+     */
+    public static function storeVoucherUpload(array $file): string {
+        if (($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK || empty($file['tmp_name'])) {
+            throw new \RuntimeException('No se pudo recibir el comprobante adjunto. Intenta nuevamente.');
+        }
+
+        $maxBytes = 5 * 1024 * 1024;
+        if (($file['size'] ?? 0) > $maxBytes) {
+            throw new \RuntimeException('El comprobante supera el límite máximo permitido de 5 MB.');
+        }
+
+        $allowed = [
+            'image/jpeg'      => 'jpg',
+            'image/png'       => 'png',
+            'image/webp'      => 'webp',
+            'application/pdf' => 'pdf',
+        ];
+
+        $mime = '';
+        if (function_exists('finfo_open')) {
+            $finfo = finfo_open(FILEINFO_MIME_TYPE);
+            if ($finfo) {
+                $mime = (string)finfo_file($finfo, $file['tmp_name']);
+                finfo_close($finfo);
+            }
+        }
+        if ($mime === '' && function_exists('mime_content_type')) {
+            $mime = (string)@mime_content_type($file['tmp_name']);
+        }
+
+        if (!isset($allowed[$mime])) {
+            throw new \RuntimeException('Formato de comprobante no válido. Usa JPG, PNG, WebP o PDF.');
+        }
+
+        $ext = $allowed[$mime];
+        $rootDir = dirname(__DIR__, 2);
+        $relDir = 'uploads/vouchers';
+        $absDir = $rootDir . '/' . $relDir;
+        if (!is_dir($absDir) && !@mkdir($absDir, 0775, true) && !is_dir($absDir)) {
+            throw new \RuntimeException('No se pudo preparar la carpeta de almacenamiento para comprobantes.');
+        }
+
+        $filename = 'voucher_' . date('Ymd_His') . '_' . bin2hex(random_bytes(5)) . '.' . $ext;
+        $destPath = $absDir . '/' . $filename;
+
+        $moved = is_uploaded_file($file['tmp_name'])
+            ? @move_uploaded_file($file['tmp_name'], $destPath)
+            : @copy($file['tmp_name'], $destPath);
+
+        if (!$moved) {
+            throw new \RuntimeException('Error al guardar el comprobante en el servidor.');
+        }
+
+        return $relDir . '/' . $filename;
+    }
 }

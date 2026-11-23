@@ -233,14 +233,43 @@ $steps = OrderWorkflow::trackingSteps();
                                     </div>
 
                                     <!-- PIE DEL PEDIDO: BOTÓN DE DETALLE TIMELINE + AUTOGESTIÓN SEGÚN FASE -->
+                                    <?php if (($ord['payment_method'] ?? '') === 'bank_transfer' && ($ord['payment_status'] ?? 'unpaid') !== 'paid' && !in_array($stKey, ['cancelled', 'returned'], true)): ?>
+                                        <div style="background: #F9FAFB; border: 1px solid #E5E7EB; border-radius: 8px; padding: 10px 12px; margin-bottom: 12px; font-size: 12.5px;">
+                                            <?php if (!empty($ord['payment_proof'])): ?>
+                                                <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 6px;">
+                                                    <span style="color: #065F46; font-weight: 600;">Voucher enviado<?= !empty($ord['payment_reference']) ? ' (Op: ' . htmlspecialchars((string)$ord['payment_reference']) . ')' : '' ?> — en verificación</span>
+                                                    <a href="<?= $baseUrl ?>/<?= htmlspecialchars(ltrim((string)$ord['payment_proof'], '/')) ?>" target="_blank" style="color: #008060; font-weight: 700; text-decoration: none;">Ver comprobante</a>
+                                                </div>
+                                            <?php else: ?>
+                                                <div style="font-weight: 700; color: #111827; margin-bottom: 6px;">Adjuntar Voucher de Transferencia / Yape / Plin:</div>
+                                                <form method="POST" action="<?= $baseUrl ?>/account/order-voucher/<?= (int)$ord['id'] ?>" enctype="multipart/form-data" style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center;">
+                                                    <?= \ShopCMS\Core\Security::csrfField() ?>
+                                                    <input type="text" name="payment_reference" maxlength="120" placeholder="Nro. operación" style="padding: 6px 9px; border: 1px solid #D1D5DB; border-radius: 6px; font-size: 12px; min-width: 120px;">
+                                                    <input type="file" name="payment_proof" accept=".jpg,.jpeg,.png,.webp,.pdf" style="flex: 1; font-size: 12px; background: #FFF; padding: 4px; border: 1px solid #D1D5DB; border-radius: 6px;">
+                                                    <button type="submit" class="btn-store btn-store-primary" style="padding: 6px 12px; font-size: 12px;">Subir Voucher</button>
+                                                </form>
+                                            <?php endif; ?>
+                                        </div>
+                                    <?php endif; ?>
+
                                     <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; padding-top: 6px;">
-                                        <button type="button" onclick="toggleOrderTimeline(<?= (int)$ord['id'] ?>)" class="btn-store btn-store-secondary" style="font-size: 12px; padding: 6px 12px; display: inline-flex; align-items: center; gap: 6px;">
-                                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                                <circle cx="12" cy="12" r="10"></circle>
-                                                <polyline points="12 6 12 12 16 14"></polyline>
-                                            </svg>
-                                            <span>Ver bitácora de seguimiento (<?= count($historyList) ?>)</span>
-                                        </button>
+                                        <div style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center;">
+                                            <button type="button" onclick="toggleOrderTimeline(<?= (int)$ord['id'] ?>)" class="btn-store btn-store-secondary" style="font-size: 12px; padding: 6px 12px; display: inline-flex; align-items: center; gap: 6px;">
+                                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                                    <circle cx="12" cy="12" r="10"></circle>
+                                                    <polyline points="12 6 12 12 16 14"></polyline>
+                                                </svg>
+                                                <span>Ver bitácora de seguimiento (<?= count($historyList) ?>)</span>
+                                            </button>
+                                            <a href="<?= $baseUrl ?>/order/receipt/<?= htmlspecialchars(ltrim((string)$ord['order_number'], '#')) ?>" target="_blank" class="btn-store btn-store-secondary" style="font-size: 12px; padding: 6px 12px; display: inline-flex; align-items: center; gap: 6px; text-decoration: none;">
+                                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                                    <polyline points="6 9 6 2 18 2 18 9"></polyline>
+                                                    <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path>
+                                                    <rect x="6" y="14" width="12" height="8"></rect>
+                                                </svg>
+                                                <span>Boleta Imprimible</span>
+                                            </a>
+                                        </div>
 
                                         <div style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center;">
                                             <?php \ShopCMS\Core\PluginManager::doAction('account_order_actions', $ord); ?>

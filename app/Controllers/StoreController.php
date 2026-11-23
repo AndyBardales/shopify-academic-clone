@@ -617,6 +617,19 @@ class StoreController {
             $paymentMethod = Settings::getBool('enable_payment_cod', true) ? 'cod' : 'bank_transfer';
         }
 
+        OrderWorkflow::ensurePaymentProofSchema();
+        $paymentReference = substr(trim((string)($_POST['payment_reference'] ?? '')), 0, 120);
+        $paymentProofPath = null;
+        if ($paymentMethod === 'bank_transfer' && !empty($_FILES['payment_proof']['name']) && (int)($_FILES['payment_proof']['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_NO_FILE) {
+            try {
+                $paymentProofPath = OrderWorkflow::storeVoucherUpload($_FILES['payment_proof']);
+            } catch (\Throwable $e) {
+                $_SESSION['cart_error'] = $e->getMessage();
+                header('Location: ' . (defined('APP_URL') ? APP_URL : '') . '/checkout');
+                exit;
+            }
+        }
+
         $orderPrefix = Settings::get('order_prefix', '#ORD-');
         $orderNumber = $orderPrefix . strtoupper(substr(uniqid(), -6));
         $allowBackorder = Settings::getBool('allow_backorder', false);
@@ -660,6 +673,8 @@ class StoreController {
                 'status' => 'pending',
                 'payment_method' => $paymentMethod,
                 'payment_status' => 'unpaid',
+                'payment_proof' => $paymentProofPath,
+                'payment_reference' => ($paymentMethod === 'bank_transfer' && $paymentReference !== '') ? $paymentReference : null,
                 'stock_restored' => 0
             ]);
 
@@ -738,6 +753,7 @@ class StoreController {
     }
 
     public function orderSuccess(string $orderNumber): void {
+        OrderWorkflow::ensurePaymentProofSchema();
         $customer = $this->requireCustomer("Inicia sesión para ver el comprobante de tu pedido.", "/order/success/" . ltrim($orderNumber, '#'));
         $clean = ltrim($orderNumber, '#');
         $order = Database::fetch("SELECT * FROM " . Database::table('orders') . " WHERE order_number = ? OR order_number = ?", [$clean, '#' . $clean]);
@@ -1125,6 +1141,102 @@ class StoreController {
         }
 
         header('Location: ' . (defined('APP_URL') ? APP_URL : '') . '/account');
+        exit;
+    }
+
+    public function orderReceipt(string $orderNumber): void {
+        OrderWorkflow::ensurePaymentProofSchema();
+        $clean = ltrim($orderNumber, '#');
+        $customer = $this->requireCustomer("Inicia sesión para descargar el comprobante de tu pedido.", "/order/receipt/" . $clean);
+        $order = Database::fetch("SELECT * FROM " . Database::table('orders') . " WHERE order_number = ? OR order_number = ?", [$clean, '#' . $clean]);
+        if (!$order) {
+            $_SESSION['flash_error'] = "No se encontró el pedido solicitado.";
+            header('Location: ' . (defined('APP_URL') ? APP_URL : '') . '/account');
+            exit;
+        }
+
+        $sameOwner = ((int)($order['customer_id'] ?? 0) === (int)$customer['id'])
+            || (strtolower(trim((string)($order['customer_email'] ?? ''))) === strtolower(trim((string)$customer['email'])));
+        if (!$sameOwner && !\ShopCMS\Core\Auth::isAdmin()) {
+            $_SESSION['flash_error'] = "No tienes permiso para acceder a este comprobante.";
+            header('Location: ' . (defined('APP_URL') ? APP_URL : '') . '/account');
+            exit;
+        }
+
+        $items = Database::fetchAll("SELECT * FROM " . Database::table('order_items') . " WHERE order_id = ?", [$order['id']]);
+        $baseUrl = defined('APP_URL') ? APP_URL : '';
+        $backUrl = $baseUrl . '/account';
+        $currencySymbol = Settings::get('store_currency_symbol', '$');
+
+        require dirname(__DIR__) . '/Views/shared/order_receipt.php';
+    }
+
+    public function uploadOrderVoucher(string $id): void {
+        if (!\ShopCMS\Core\Auth::isCustomer()) {
+            header('Location: ' . (defined('APP_URL') ? APP_URL : '') . '/login');
+            exit;
+        }
+
+        OrderWorkflow::ensurePaymentProofSchema();
+        $customer = \ShopCMS\Core\Auth::customer();
+        $orderId = (int)$id;
+        $order = Database::fetch("
+            SELECT * FROM " . Database::table('orders') . "
+            WHERE id = ? AND (customer_id = ? OR LOWER(customer_email) = LOWER(?))
+        ", [$orderId, (int)$customer['id'], $customer['email']]);
+
+        $baseUrl = defined('APP_URL') ? APP_URL : '';
+        $returnTo = trim((string)($_POST['return_to'] ?? ''));
+        $safeRedirect = ($returnTo !== '' && str_starts_with($returnTo, '/order/success/'))
+            ? ($baseUrl . $returnTo)
+            : ($baseUrl . '/account');
+
+        if (!$order) {
+            $_SESSION['flash_error'] = "No se encontró el pedido solicitado.";
+            header('Location: ' . $safeRedirect);
+            exit;
+        }
+
+        if (($order['payment_method'] ?? '') !== 'bank_transfer') {
+            $_SESSION['flash_error'] = "Este pedido no utiliza transferencia bancaria o billetera digital.";
+            header('Location: ' . $safeRedirect);
+            exit;
+        }
+
+        if (in_array($order['status'] ?? '', ['cancelled', 'returned'], true) || ($order['payment_status'] ?? '') === 'paid') {
+            $_SESSION['flash_error'] = "El pago de este pedido ya fue validado o el pedido fue cerrado.";
+            header('Location: ' . $safeRedirect);
+            exit;
+        }
+
+        $ref = substr(trim((string)($_POST['payment_reference'] ?? '')), 0, 120);
+        $hasFile = !empty($_FILES['payment_proof']['name']) && (int)($_FILES['payment_proof']['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_NO_FILE;
+        if (!$hasFile && $ref === '') {
+            $_SESSION['flash_error'] = "Adjunta la imagen/PDF del comprobante o ingresa el número de operación.";
+            header('Location: ' . $safeRedirect);
+            exit;
+        }
+
+        $updateData = [];
+        if ($ref !== '') {
+            $updateData['payment_reference'] = $ref;
+        }
+        if ($hasFile) {
+            try {
+                $updateData['payment_proof'] = OrderWorkflow::storeVoucherUpload($_FILES['payment_proof']);
+            } catch (\Throwable $e) {
+                $_SESSION['flash_error'] = $e->getMessage();
+                header('Location: ' . $safeRedirect);
+                exit;
+            }
+        }
+
+        Database::update('orders', $updateData, "id = :id", ['id' => $orderId]);
+        $note = "El cliente registró constancia de pago" . ($ref !== '' ? " (Nro. Op: {$ref})" : '') . ".";
+        OrderWorkflow::recordHistory($orderId, (string)$order['status'], $note, 'customer');
+
+        $_SESSION['flash_success'] = "Comprobante de pago registrado para el pedido {$order['order_number']}. Nuestro equipo lo verificará a la brevedad.";
+        header('Location: ' . $safeRedirect);
         exit;
     }
 

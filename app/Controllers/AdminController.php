@@ -1222,6 +1222,7 @@ class AdminController {
     }
 
     public function orderView(string $id): void {
+        OrderWorkflow::ensurePaymentProofSchema();
         $orderId = (int)$id;
         $order = Database::fetch("SELECT * FROM " . Database::table('orders') . " WHERE id = ?", [$orderId]);
         if (!$order) {
@@ -1333,6 +1334,24 @@ class AdminController {
         $_SESSION['flash_success'] = "Pedido {$order['order_number']} actualizado a '{$statusMeta['short']}'" . ($stockAdjusted ? " (inventario sincronizado)." : ".");
         header('Location: ' . (defined('APP_URL') ? APP_URL : '') . '/admin/orders/view/' . $orderId);
         exit;
+    }
+
+    public function orderReceipt(string $id): void {
+        OrderWorkflow::ensurePaymentProofSchema();
+        $orderId = (int)$id;
+        $order = Database::fetch("SELECT * FROM " . Database::table('orders') . " WHERE id = ?", [$orderId]);
+        if (!$order) {
+            $_SESSION['flash_error'] = 'El pedido no existe.';
+            header('Location: ' . (defined('APP_URL') ? APP_URL : '') . '/admin/orders');
+            exit;
+        }
+
+        $items = Database::fetchAll("SELECT * FROM " . Database::table('order_items') . " WHERE order_id = ?", [$orderId]);
+        $baseUrl = defined('APP_URL') ? APP_URL : '';
+        $backUrl = $baseUrl . '/admin/orders/view/' . $orderId;
+        $currencySymbol = Settings::get('store_currency_symbol', '$');
+
+        require dirname(__DIR__) . '/Views/shared/order_receipt.php';
     }
 
     // ==========================================

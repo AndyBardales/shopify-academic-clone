@@ -20,7 +20,7 @@ $total = $total ?? 0;
         <?php unset($_SESSION['cart_error']); ?>
     <?php endif; ?>
 
-    <form method="POST" action="<?= $baseUrl ?>/checkout/process">
+    <form method="POST" action="<?= $baseUrl ?>/checkout/process" enctype="multipart/form-data">
         <?= \ShopCMS\Core\Security::csrfField() ?>
         <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 36px;">
             <!-- DATOS DEL CLIENTE Y ENVÍO -->
@@ -90,15 +90,31 @@ $total = $total ?? 0;
                                 <input type="radio" name="payment_method" value="bank_transfer" <?= !$enablePaymentCod ? 'checked' : '' ?> onchange="toggleBankInstructionsBox()">
                                 <div>
                                     <strong>Transferencia Bancaria / BCP / Yape / Plin</strong>
-                                    <p style="font-size: 12px; color: var(--color-text-light);">Realiza el pago directo a nuestras cuentas y envía el comprobante.</p>
+                                    <p style="font-size: 12px; color: var(--color-text-light);">Realiza el pago directo a nuestras cuentas y adjunta el comprobante o voucher.</p>
                                 </div>
                             </label>
-                            <?php if ($bankInstructions !== ''): ?>
-                                <div id="bank-instructions-box" style="display: <?= !$enablePaymentCod ? 'block' : 'none' ?>; background: #F9FAFB; border: 1px solid #E5E7EB; border-radius: 8px; padding: 12px 14px; font-size: 12.5px; color: #374151; line-height: 1.5;">
-                                    <strong style="display: block; margin-bottom: 4px; color: #111827;">Datos para tu depósito o transferencia:</strong>
-                                    <?= nl2br(htmlspecialchars($bankInstructions)) ?>
+                            <div id="bank-instructions-box" style="display: <?= !$enablePaymentCod ? 'block' : 'none' ?>; background: #F9FAFB; border: 1px solid #E5E7EB; border-radius: 8px; padding: 14px 16px; font-size: 12.5px; color: #374151; line-height: 1.5;">
+                                <?php if ($bankInstructions !== ''): ?>
+                                    <div style="margin-bottom: 12px; padding-bottom: 10px; border-bottom: 1px dashed #D1D5DB;">
+                                        <strong style="display: block; margin-bottom: 4px; color: #111827;">Datos para tu depósito o transferencia:</strong>
+                                        <?= nl2br(htmlspecialchars($bankInstructions)) ?>
+                                    </div>
+                                <?php endif; ?>
+                                <div style="margin-bottom: 10px;">
+                                    <label for="checkout-payment-reference" style="display: block; font-size: 12px; font-weight: 700; color: #111827; margin-bottom: 4px;">Número de Operación / Código (Opcional)</label>
+                                    <input type="text" id="checkout-payment-reference" name="payment_reference" maxlength="120" placeholder="Ej: OP-948271 o Yape 123456" style="width: 100%; padding: 8px 12px; border: 1px solid #D1D5DB; border-radius: 6px; font-size: 13px; background: #FFFFFF;">
                                 </div>
-                            <?php endif; ?>
+                                <div>
+                                    <label for="checkout-payment-proof" style="display: block; font-size: 12px; font-weight: 700; color: #111827; margin-bottom: 4px;">Subir Captura / Voucher de Pago (Opcional ahora)</label>
+                                    <input type="file" id="checkout-payment-proof" name="payment_proof" accept=".jpg,.jpeg,.png,.webp,.pdf" onchange="previewCheckoutVoucher(this)" style="width: 100%; font-size: 12.5px; background: #FFFFFF; padding: 6px; border: 1px solid #D1D5DB; border-radius: 6px;">
+                                    <div style="font-size: 11px; color: #6B7280; margin-top: 4px;">Formatos: JPG, PNG, WebP o PDF (máx. 5 MB). Si pagas después, podrás subirlo desde Mi Cuenta.</div>
+                                    <div id="checkout-voucher-preview" style="display: none; margin-top: 8px; align-items: center; gap: 10px;">
+                                        <img id="checkout-voucher-img" src="" alt="Vista previa del comprobante" style="max-height: 84px; border-radius: 6px; border: 1px solid #D1D5DB; display: none;">
+                                        <span id="checkout-voucher-name" style="font-size: 12px; color: #111827; font-weight: 600;"></span>
+                                        <button type="button" onclick="clearCheckoutVoucher()" style="background: #FEF2F2; color: #DC2626; border: 1px solid #FECACA; border-radius: 5px; padding: 3px 8px; font-size: 11.5px; cursor: pointer;">Quitar</button>
+                                    </div>
+                                </div>
+                            </div>
                         <?php endif; ?>
 
                         <!-- HOOK PARA PASARELAS DE PAGO DE PLUGINS (Culqi, PayPal, Stripe) -->
@@ -176,6 +192,42 @@ function toggleBankInstructionsBox() {
     if (!box) return;
     const selected = document.querySelector('input[name="payment_method"]:checked');
     box.style.display = (selected && selected.value === 'bank_transfer') ? 'block' : 'none';
+}
+function previewCheckoutVoucher(input) {
+    const wrap = document.getElementById('checkout-voucher-preview');
+    const img = document.getElementById('checkout-voucher-img');
+    const nameEl = document.getElementById('checkout-voucher-name');
+    if (!input.files || !input.files.length) {
+        if (wrap) wrap.style.display = 'none';
+        return;
+    }
+    const file = input.files[0];
+    if (file.size > 5 * 1024 * 1024) {
+        alert('El archivo supera el máximo permitido de 5 MB.');
+        input.value = '';
+        if (wrap) wrap.style.display = 'none';
+        return;
+    }
+    if (nameEl) nameEl.textContent = file.name;
+    if (file.type && file.type.startsWith('image/') && img) {
+        const reader = new FileReader();
+        reader.onload = function(ev) {
+            img.src = ev.target.result;
+            img.style.display = 'block';
+        };
+        reader.readAsDataURL(file);
+    } else if (img) {
+        img.style.display = 'none';
+    }
+    if (wrap) wrap.style.display = 'flex';
+}
+function clearCheckoutVoucher() {
+    const inp = document.getElementById('checkout-payment-proof');
+    const wrap = document.getElementById('checkout-voucher-preview');
+    const img = document.getElementById('checkout-voucher-img');
+    if (inp) inp.value = '';
+    if (img) { img.src = ''; img.style.display = 'none'; }
+    if (wrap) wrap.style.display = 'none';
 }
 document.addEventListener('DOMContentLoaded', function() {
     document.querySelectorAll('input[name="payment_method"]').forEach(function(radio) {

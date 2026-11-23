@@ -131,6 +131,8 @@ CREATE TABLE IF NOT EXISTS `{prefix}orders` (
     `status` ENUM('pending', 'processing', 'packing', 'shipped', 'out_for_delivery', 'delivered', 'completed', 'cancelled', 'returned') DEFAULT 'pending',
     `payment_method` VARCHAR(100) DEFAULT 'cod',
     `payment_status` ENUM('unpaid', 'paid', 'refunded') DEFAULT 'unpaid',
+    `payment_proof` VARCHAR(255) NULL,
+    `payment_reference` VARCHAR(120) NULL,
     `carrier` VARCHAR(100) NULL,
     `tracking_number` VARCHAR(100) NULL,
     `estimated_delivery` DATE NULL,

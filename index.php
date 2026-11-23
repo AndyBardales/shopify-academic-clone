@@ -122,6 +122,7 @@ Router::get('/admin/categories/seed-preset', [AdminController::class, 'categoryS
 // MÃ³dulo 3: GestiÃ³n de Pedidos y Estados
 Router::get('/admin/orders', [AdminController::class, 'orders']);
 Router::get('/admin/orders/view/{id}', [AdminController::class, 'orderView']);
+Router::get('/admin/orders/receipt/{id}', [AdminController::class, 'orderReceipt']);
 Router::post('/admin/orders/update-status/{id}', [AdminController::class, 'orderUpdateStatus']);
 
 // MÃ³dulo 4: Cupones y Descuentos
@@ -196,6 +197,7 @@ Router::get('/cart/remove-coupon', [StoreController::class, 'removeCoupon']);
 Router::get('/checkout', [StoreController::class, 'checkout']);
 Router::post('/checkout/process', [StoreController::class, 'processOrder']);
 Router::get('/order/success/{order_number}', [StoreController::class, 'orderSuccess']);
+Router::get('/order/receipt/{order_number}', [StoreController::class, 'orderReceipt']);
 
 // AutenticaciÃ³n de Clientes y Portal de Compras
 Router::get('/login', [StoreController::class, 'customerLogin']);
@@ -206,6 +208,7 @@ Router::get('/logout', [StoreController::class, 'customerLogout']);
 Router::get('/account', [StoreController::class, 'customerAccount']);
 Router::post('/account/profile/update', [StoreController::class, 'customerProfileUpdate']);
 Router::post('/account/order-action/{id}', [StoreController::class, 'customerOrderAction']);
+Router::post('/account/order-voucher/{id}', [StoreController::class, 'uploadOrderVoucher']);
 
 // EnvÃ­o de ReseÃ±as Verificadas de Clientes
 Router::post('/account/review', [StoreController::class, 'submitVerifiedReview']);

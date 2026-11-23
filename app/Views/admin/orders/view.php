@@ -97,6 +97,14 @@ $currentStep = (int)$stMeta['step'];
     </div>
 
     <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+        <a href="<?= $baseUrl ?>/admin/orders/receipt/<?= (int)$order['id'] ?>" target="_blank" class="btn btn-secondary" style="display: inline-flex; align-items: center; gap: 6px;">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="6 9 6 2 18 2 18 9"></polyline>
+                <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path>
+                <rect x="6" y="14" width="12" height="8"></rect>
+            </svg>
+            <span>Imprimir Comprobante</span>
+        </a>
         <?php \ShopCMS\Core\PluginManager::doAction('admin_order_actions', $order, $items); ?>
         <?php if (!empty($stMeta['next'])): ?>
             <button type="button" onclick="selectNextOrderStep('<?= $stMeta['next'] ?>')" class="btn btn-primary" style="display: inline-flex; align-items: center; gap: 7px;">
@@ -311,6 +319,38 @@ $currentStep = (int)$stMeta['step'];
                             </small>
                         <?php endif; ?>
                     </div>
+
+                    <?php if (!empty($order['payment_proof']) || !empty($order['payment_reference']) || ($order['payment_method'] ?? '') === 'bank_transfer'): ?>
+                        <div style="background: #F9FAFB; border: 1px solid #E5E7EB; border-radius: 8px; padding: 12px 14px; margin-bottom: 16px;">
+                            <div style="font-size: 12px; font-weight: 700; color: #111827; margin-bottom: 8px;">Voucher / Constancia de Pago</div>
+                            <?php if (!empty($order['payment_reference'])): ?>
+                                <div style="font-size: 12.5px; margin-bottom: 6px;">
+                                    <strong>Nro. Operación:</strong> <code><?= htmlspecialchars((string)$order['payment_reference']) ?></code>
+                                </div>
+                            <?php endif; ?>
+                            <?php if (!empty($order['payment_proof'])): ?>
+                                <?php
+                                $proofRel = ltrim((string)$order['payment_proof'], '/');
+                                $proofUrl = $baseUrl . '/' . htmlspecialchars($proofRel);
+                                $isPdfProof = str_ends_with(strtolower($proofRel), '.pdf');
+                                ?>
+                                <?php if ($isPdfProof): ?>
+                                    <a href="<?= $proofUrl ?>" target="_blank" class="btn btn-secondary btn-sm" style="margin-bottom: 8px;">Ver Comprobante PDF</a>
+                                <?php else: ?>
+                                    <a href="<?= $proofUrl ?>" target="_blank" title="Abrir voucher en tamaño completo" style="display: block; margin-bottom: 8px;">
+                                        <img src="<?= $proofUrl ?>" alt="Voucher de pago" style="width: 100%; max-height: 180px; object-fit: contain; border-radius: 6px; border: 1px solid #D1D5DB; background: #FFFFFF;">
+                                    </a>
+                                <?php endif; ?>
+                                <?php if ($order['payment_status'] === 'unpaid'): ?>
+                                    <button type="button" class="btn btn-primary btn-sm" style="width: 100%;" onclick="document.getElementById('payment_status').value='paid'; if (document.getElementById('status').value==='pending') { document.getElementById('status').value='processing'; } document.getElementById('order-logistics-form').submit();">
+                                        Validar Voucher y Marcar Pagado
+                                    </button>
+                                <?php endif; ?>
+                            <?php else: ?>
+                                <div style="font-size: 12px; color: #6B7280;">El cliente aún no ha adjuntado captura del pago.</div>
+                            <?php endif; ?>
+                        </div>
+                    <?php endif; ?>
 
                     <!-- DATOS DE DESPACHO Y TRACKING -->
                     <div id="shipping-tracking-box" style="background: #F9FAFB; border: 1px solid #E5E7EB; border-radius: 8px; padding: 12px 14px; margin-bottom: 16px;">
