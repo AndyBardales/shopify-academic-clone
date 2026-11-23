@@ -66,6 +66,11 @@
                         <label for="description">Descripción completa y cuidados</label>
                         <textarea id="description" name="description" class="form-control" rows="6" placeholder="Detalles de materiales, cuidados, medidas, especificaciones..."><?= htmlspecialchars($product['description'] ?? '') ?></textarea>
                     </div>
+
+                    <div class="form-group">
+                        <label for="specs">Características técnicas base (opcional, una por línea "Clave: Valor")</label>
+                        <textarea id="specs" name="specs" class="form-control" rows="4" placeholder="Material: 100% Algodón orgánico&#10;Corte: Oversize&#10;Garantía: 6 meses"><?= htmlspecialchars($product['specs'] ?? '') ?></textarea>
+                    </div>
                 </div>
             </div>
 
@@ -160,6 +165,8 @@
                         </div>
                     </div>
 
+                    <?php require __DIR__ . '/_variant_tools.php'; ?>
+
                     <div class="variant-table-container">
                         <table class="polaris-table variant-table">
                             <colgroup>
@@ -209,6 +216,10 @@
                                                 <div class="scms-var-img-picker" style="display: flex; align-items: center; gap: 6px;">
                                                     <input type="hidden" name="variant_existing_image[]" value="<?= htmlspecialchars($vImgRaw) ?>">
                                                     <input type="hidden" name="variant_clear_image[]" value="0">
+                                                    <input type="hidden" name="variant_bulk_ref[]" value="">
+                                                    <input type="hidden" name="variant_short_description[]" value="<?= htmlspecialchars((string)($v['short_description'] ?? '')) ?>">
+                                                    <input type="hidden" name="variant_description[]" value="<?= htmlspecialchars((string)($v['description'] ?? '')) ?>">
+                                                    <input type="hidden" name="variant_specs[]" value="<?= htmlspecialchars((string)($v['specs'] ?? '')) ?>">
                                                     <div class="scms-var-thumb" style="width: 34px; height: 34px; border-radius: 6px; border: 1px solid #E5E7EB; background: #F9FAFB; display: flex; align-items: center; justify-content: center; flex-shrink: 0; overflow: hidden;">
                                                         <?php if ($vImgSrc !== ''): ?>
                                                             <img src="<?= htmlspecialchars($vImgSrc) ?>" alt="Variante" style="width: 100%; height: 100%; object-fit: cover;">
@@ -223,13 +234,16 @@
                                                     <button type="button" class="scms-var-clear btn btn-secondary btn-sm" onclick="clearVariantImage(this)" title="Quitar foto" style="display: <?= $vImgSrc !== '' ? 'inline-flex' : 'none' ?>; padding: 4px 7px; font-size: 12px; color: #DC2626; border-color: #FCA5A5;">&times;</button>
                                                 </div>
                                             </td>
-                                            <td style="text-align: center;">
-                                                <button type="button" class="btn btn-secondary btn-sm" onclick="removeVariantRow(this)" title="Quitar variante" style="padding: 6px 8px; color: #DC2626; border-color: #FCA5A5;">
-                                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                                        <polyline points="3 6 5 6 21 6"></polyline>
-                                                        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-                                                    </svg>
-                                                </button>
+                                            <td style="text-align: center; white-space: nowrap;">
+                                                <div style="display: inline-flex; align-items: center; gap: 4px;">
+                                                    <button type="button" class="btn btn-secondary btn-sm scms-var-details-btn" onclick="scmsOpenVarDetailsModal(this)" title="Descripción y ficha técnica propia" style="padding: 5px 8px; font-size: 11px;">Ficha</button>
+                                                    <button type="button" class="btn btn-secondary btn-sm" onclick="removeVariantRow(this)" title="Quitar variante" style="padding: 6px 8px; color: #DC2626; border-color: #FCA5A5;">
+                                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                                            <polyline points="3 6 5 6 21 6"></polyline>
+                                                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                                                        </svg>
+                                                    </button>
+                                                </div>
                                             </td>
                                         </tr>
                                     <?php endforeach; ?>
@@ -255,6 +269,10 @@
                                             <div class="scms-var-img-picker" style="display: flex; align-items: center; gap: 6px;">
                                                 <input type="hidden" name="variant_existing_image[]" value="">
                                                 <input type="hidden" name="variant_clear_image[]" value="0">
+                                                <input type="hidden" name="variant_bulk_ref[]" value="">
+                                                <input type="hidden" name="variant_short_description[]" value="">
+                                                <input type="hidden" name="variant_description[]" value="">
+                                                <input type="hidden" name="variant_specs[]" value="">
                                                 <div class="scms-var-thumb" style="width: 34px; height: 34px; border-radius: 6px; border: 1px solid #E5E7EB; background: #F9FAFB; display: flex; align-items: center; justify-content: center; flex-shrink: 0; overflow: hidden;">
                                                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9CA3AF" stroke-width="1.8"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
                                                 </div>
@@ -265,13 +283,16 @@
                                                 <button type="button" class="scms-var-clear btn btn-secondary btn-sm" onclick="clearVariantImage(this)" title="Quitar foto" style="display: none; padding: 4px 7px; font-size: 12px; color: #DC2626; border-color: #FCA5A5;">&times;</button>
                                             </div>
                                         </td>
-                                        <td style="text-align: center;">
-                                            <button type="button" class="btn btn-secondary btn-sm" onclick="removeVariantRow(this)" title="Quitar variante" style="padding: 6px 8px; color: #DC2626; border-color: #FCA5A5;">
-                                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                                    <polyline points="3 6 5 6 21 6"></polyline>
-                                                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-                                                </svg>
-                                            </button>
+                                        <td style="text-align: center; white-space: nowrap;">
+                                            <div style="display: inline-flex; align-items: center; gap: 4px;">
+                                                <button type="button" class="btn btn-secondary btn-sm scms-var-details-btn" onclick="scmsOpenVarDetailsModal(this)" title="Descripción y ficha técnica propia" style="padding: 5px 8px; font-size: 11px;">Ficha</button>
+                                                <button type="button" class="btn btn-secondary btn-sm" onclick="removeVariantRow(this)" title="Quitar variante" style="padding: 6px 8px; color: #DC2626; border-color: #FCA5A5;">
+                                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                                        <polyline points="3 6 5 6 21 6"></polyline>
+                                                        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                                                    </svg>
+                                                </button>
+                                            </div>
                                         </td>
                                     </tr>
                                 <?php endif; ?>
@@ -507,6 +528,10 @@ function addVariantRow() {
             <div class="scms-var-img-picker" style="display: flex; align-items: center; gap: 6px;">
                 <input type="hidden" name="variant_existing_image[]" value="">
                 <input type="hidden" name="variant_clear_image[]" value="0">
+                <input type="hidden" name="variant_bulk_ref[]" value="">
+                <input type="hidden" name="variant_short_description[]" value="">
+                <input type="hidden" name="variant_description[]" value="">
+                <input type="hidden" name="variant_specs[]" value="">
                 <div class="scms-var-thumb" style="width: 34px; height: 34px; border-radius: 6px; border: 1px solid #E5E7EB; background: #F9FAFB; display: flex; align-items: center; justify-content: center; flex-shrink: 0; overflow: hidden;">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9CA3AF" stroke-width="1.8"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
                 </div>
@@ -517,13 +542,16 @@ function addVariantRow() {
                 <button type="button" class="scms-var-clear btn btn-secondary btn-sm" onclick="clearVariantImage(this)" title="Quitar foto" style="display: none; padding: 4px 7px; font-size: 12px; color: #DC2626; border-color: #FCA5A5;">&times;</button>
             </div>
         </td>
-        <td style="text-align: center;">
-            <button type="button" class="btn btn-secondary btn-sm" onclick="removeVariantRow(this)" title="Quitar variante" style="padding: 6px 8px; color: #DC2626; border-color: #FCA5A5;">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <polyline points="3 6 5 6 21 6"></polyline>
-                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-                </svg>
-            </button>
+        <td style="text-align: center; white-space: nowrap;">
+            <div style="display: inline-flex; align-items: center; gap: 4px;">
+                <button type="button" class="btn btn-secondary btn-sm scms-var-details-btn" onclick="scmsOpenVarDetailsModal(this)" title="Descripción y ficha técnica propia" style="padding: 5px 8px; font-size: 11px;">Ficha</button>
+                <button type="button" class="btn btn-secondary btn-sm" onclick="removeVariantRow(this)" title="Quitar variante" style="padding: 6px 8px; color: #DC2626; border-color: #FCA5A5;">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="3 6 5 6 21 6"></polyline>
+                        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                    </svg>
+                </button>
+            </div>
         </td>
     `;
     tbody.appendChild(tr);

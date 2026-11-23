@@ -10,6 +10,7 @@ use ShopCMS\Core\InventoryManager;
 use ShopCMS\Core\Settings;
 use ShopCMS\Core\ThemeCustomizer;
 use ShopCMS\Core\Security;
+use ShopCMS\Core\StorefrontExperience;
 use Exception;
 
 class AdminController {
@@ -361,7 +362,37 @@ class AdminController {
         }
     }
 
-    private function resolveVariantImageAtIndex(int $idx, string $existingImg, bool $clearFlag, ?array &$errors = null): ?string {
+    private function processBulkVariantImages(array &$errors): array {
+        $map = [];
+        if (empty($_FILES['bulk_variant_files']['name']) || !is_array($_FILES['bulk_variant_files']['name'])) {
+            return $map;
+        }
+        $keys = $_POST['bulk_variant_keys'] ?? [];
+        foreach ($_FILES['bulk_variant_files']['name'] as $idx => $name) {
+            $bKey = trim((string)($keys[$idx] ?? ''));
+            if ($bKey === '' || empty($name)) continue;
+            $errCode = $_FILES['bulk_variant_files']['error'][$idx] ?? UPLOAD_ERR_NO_FILE;
+            if ($errCode === UPLOAD_ERR_INI_SIZE || $errCode === UPLOAD_ERR_FORM_SIZE) {
+                $errors[] = "Una foto masiva de variante supera el límite máximo de 2 MB.";
+                continue;
+            }
+            if ($errCode === UPLOAD_ERR_OK && !empty($_FILES['bulk_variant_files']['tmp_name'][$idx])) {
+                $uploaded = $this->uploadProductImageFile(
+                    $_FILES['bulk_variant_files']['tmp_name'][$idx],
+                    $name,
+                    'prod_var_',
+                    $errors,
+                    (int)($_FILES['bulk_variant_files']['size'][$idx] ?? 0)
+                );
+                if ($uploaded !== null) {
+                    $map[$bKey] = $uploaded;
+                }
+            }
+        }
+        return $map;
+    }
+
+    private function resolveVariantImageAtIndex(int $idx, string $existingImg, bool $clearFlag, ?array &$errors = null, array $bulkImageMap = [], string $bulkRef = ''): ?string {
         if (!empty($_FILES['variant_image_file']['name'][$idx])) {
             $errCode = $_FILES['variant_image_file']['error'][$idx] ?? UPLOAD_ERR_NO_FILE;
             if ($errCode === UPLOAD_ERR_INI_SIZE || $errCode === UPLOAD_ERR_FORM_SIZE) {
@@ -383,6 +414,9 @@ class AdminController {
         }
         if ($clearFlag) {
             return null;
+        }
+        if ($bulkRef !== '' && isset($bulkImageMap[$bulkRef])) {
+            return $bulkImageMap[$bulkRef];
         }
         $existingTrim = trim($existingImg);
         if ($existingTrim !== '') {
@@ -431,6 +465,7 @@ class AdminController {
     }
 
     public function productCreate(): void {
+        StorefrontExperience::ensureVariantRichColumns();
         $categories = Database::fetchAll("
             SELECT c.*, p.name as parent_name 
             FROM " . Database::table('categories') . " c 
@@ -451,6 +486,7 @@ class AdminController {
     }
 
     public function productStore(): void {
+        StorefrontExperience::ensureVariantRichColumns();
         $name = trim($_POST['name'] ?? '');
         $slug = trim($_POST['slug'] ?? '');
         if (empty($slug)) {
@@ -466,6 +502,7 @@ class AdminController {
         $categoryId = !empty($_POST['category_id']) ? (int)$_POST['category_id'] : null;
         $description = trim($_POST['description'] ?? '');
         $shortDescription = trim($_POST['short_description'] ?? '');
+        $specs = trim($_POST['specs'] ?? '');
         $hasVariants = isset($_POST['has_variants']) ? 1 : 0;
         $option1Name = !empty($_POST['option1_name']) ? trim($_POST['option1_name']) : 'Color';
         $option2Name = !empty($_POST['option2_name']) ? trim($_POST['option2_name']) : 'Talla';
@@ -520,6 +557,7 @@ class AdminController {
         $validVariants = [];
 
         if ($hasVariants && !empty($_POST['variant_title'])) {
+            $bulkImageMap = $this->processBulkVariantImages($imageErrors);
             $variantTitles = $_POST['variant_title'];
             $variantSkus = $_POST['variant_sku'] ?? [];
             $variantPrices = $_POST['variant_price'] ?? [];
@@ -527,6 +565,10 @@ class AdminController {
             $variantQtys = $_POST['variant_qty'] ?? [];
             $variantExistingImages = $_POST['variant_existing_image'] ?? [];
             $variantClearImages = $_POST['variant_clear_image'] ?? [];
+            $variantBulkRefs = $_POST['variant_bulk_ref'] ?? [];
+            $variantShortDescs = $_POST['variant_short_description'] ?? [];
+            $variantDescs = $_POST['variant_description'] ?? [];
+            $variantSpecs = $_POST['variant_specs'] ?? [];
 
             for ($i = 0; $i < count($variantTitles); $i++) {
                 $vTitle = trim($variantTitles[$i]);
@@ -539,8 +581,13 @@ class AdminController {
                         $i,
                         (string)($variantExistingImages[$i] ?? ''),
                         !empty($variantClearImages[$i]),
-                        $imageErrors
+                        $imageErrors,
+                        $bulkImageMap,
+                        trim((string)($variantBulkRefs[$i] ?? ''))
                     );
+                    $vShort = trim((string)($variantShortDescs[$i] ?? ''));
+                    $vDesc = trim((string)($variantDescs[$i] ?? ''));
+                    $vSpec = trim((string)($variantSpecs[$i] ?? ''));
 
                     if ($firstVariantPrice === null) {
                         $firstVariantPrice = $vPrice;
@@ -554,7 +601,10 @@ class AdminController {
                         'price' => $vPrice,
                         'compare_price' => $vCompare,
                         'quantity' => $vQty,
-                        'image_url' => $vImg
+                        'image_url' => $vImg,
+                        'short_description' => $vShort !== '' ? $vShort : null,
+                        'description' => $vDesc !== '' ? $vDesc : null,
+                        'specs' => $vSpec !== '' ? $vSpec : null,
                     ];
                 }
             }
@@ -572,6 +622,7 @@ class AdminController {
             'slug' => $slug,
             'short_description' => $shortDescription,
             'description' => $description,
+            'specs' => $specs !== '' ? $specs : null,
             'price' => $price,
             'compare_price' => $comparePrice,
             'cost_price' => $costPrice,
@@ -599,7 +650,10 @@ class AdminController {
                     'price' => $varData['price'],
                     'compare_price' => $varData['compare_price'],
                     'quantity' => $varData['quantity'],
-                    'image_url' => $varData['image_url']
+                    'image_url' => $varData['image_url'],
+                    'short_description' => $varData['short_description'],
+                    'description' => $varData['description'],
+                    'specs' => $varData['specs'],
                 ]);
                 if ((int)$varData['quantity'] > 0) {
                     InventoryManager::logMovement((int)$productId, (int)$newVid, 0, (int)$varData['quantity'], 'catalog_sync', 'Catálogo', 'Stock inicial al crear variante');
@@ -621,6 +675,7 @@ class AdminController {
     }
 
     public function productEdit(string $id): void {
+        StorefrontExperience::ensureVariantRichColumns();
         $product = Database::fetch("
             SELECT p.*, c.name as category_name 
             FROM " . Database::table('products') . " p 
@@ -657,6 +712,7 @@ class AdminController {
     }
 
     public function productUpdate(string $id): void {
+        StorefrontExperience::ensureVariantRichColumns();
         $productId = (int)$id;
         $product = Database::fetch("SELECT * FROM " . Database::table('products') . " WHERE id = ?", [$productId]);
         if (!$product) {
@@ -680,6 +736,7 @@ class AdminController {
         $categoryId = !empty($_POST['category_id']) ? (int)$_POST['category_id'] : null;
         $description = trim($_POST['description'] ?? '');
         $shortDescription = trim($_POST['short_description'] ?? '');
+        $specs = trim($_POST['specs'] ?? '');
         $hasVariants = isset($_POST['has_variants']) ? 1 : 0;
         $option1Name = !empty($_POST['option1_name']) ? trim($_POST['option1_name']) : ($product['option1_name'] ?? 'Color');
         $option2Name = !empty($_POST['option2_name']) ? trim($_POST['option2_name']) : ($product['option2_name'] ?? 'Talla');
@@ -746,6 +803,7 @@ class AdminController {
         // Gestión y sincronización de Variantes
         $totalVariantStock = 0;
         if ($hasVariants && !empty($_POST['variant_title'])) {
+            $bulkImageMap = $this->processBulkVariantImages($imageErrors);
             $variantIds = $_POST['variant_id'] ?? [];
             $variantTitles = $_POST['variant_title'] ?? [];
             $variantSkus = $_POST['variant_sku'] ?? [];
@@ -754,6 +812,10 @@ class AdminController {
             $variantQtys = $_POST['variant_qty'] ?? [];
             $variantExistingImages = $_POST['variant_existing_image'] ?? [];
             $variantClearImages = $_POST['variant_clear_image'] ?? [];
+            $variantBulkRefs = $_POST['variant_bulk_ref'] ?? [];
+            $variantShortDescs = $_POST['variant_short_description'] ?? [];
+            $variantDescs = $_POST['variant_description'] ?? [];
+            $variantSpecs = $_POST['variant_specs'] ?? [];
 
             $savedVariantIds = [];
             $firstVariantPrice = null;
@@ -772,8 +834,13 @@ class AdminController {
                     $i,
                     (string)($variantExistingImages[$i] ?? ''),
                     !empty($variantClearImages[$i]),
-                    $imageErrors
+                    $imageErrors,
+                    $bulkImageMap,
+                    trim((string)($variantBulkRefs[$i] ?? ''))
                 );
+                $vShort = trim((string)($variantShortDescs[$i] ?? ''));
+                $vDesc = trim((string)($variantDescs[$i] ?? ''));
+                $vSpec = trim((string)($variantSpecs[$i] ?? ''));
                 $totalVariantStock += $vQty;
 
                 if ($firstVariantPrice === null) {
@@ -781,32 +848,29 @@ class AdminController {
                     $firstVariantComparePrice = $vComparePrice;
                 }
 
+                $variantRecord = [
+                    'title' => $title,
+                    'sku' => $vSku,
+                    'price' => $vPrice,
+                    'compare_price' => $vComparePrice,
+                    'quantity' => $vQty,
+                    'image_url' => $vImg,
+                    'short_description' => $vShort !== '' ? $vShort : null,
+                    'description' => $vDesc !== '' ? $vDesc : null,
+                    'specs' => $vSpec !== '' ? $vSpec : null,
+                ];
+
                 if ($vId > 0) {
                     $oldVarRow = Database::fetch("SELECT quantity FROM " . Database::table('product_variants') . " WHERE id = ?", [$vId]);
                     $oldVarQty = (int)($oldVarRow['quantity'] ?? 0);
-                    Database::update('product_variants', [
-                        'title' => $title,
-                        'sku' => $vSku,
-                        'price' => $vPrice,
-                        'compare_price' => $vComparePrice,
-                        'quantity' => $vQty,
-                        'image_url' => $vImg
-                    ], "id = :id AND product_id = :product_id", [
+                    Database::update('product_variants', $variantRecord, "id = :id AND product_id = :product_id", [
                         'id' => $vId,
                         'product_id' => $productId
                     ]);
                     InventoryManager::logMovement($productId, $vId, $oldVarQty, (int)$vQty, 'catalog_sync', 'Catálogo', 'Ajuste desde ficha de producto');
                     $savedVariantIds[] = $vId;
                 } else {
-                    $newVid = Database::insert('product_variants', [
-                        'product_id' => $productId,
-                        'title' => $title,
-                        'sku' => $vSku,
-                        'price' => $vPrice,
-                        'compare_price' => $vComparePrice,
-                        'quantity' => $vQty,
-                        'image_url' => $vImg
-                    ]);
+                    $newVid = Database::insert('product_variants', array_merge(['product_id' => $productId], $variantRecord));
                     if ((int)$vQty > 0) {
                         InventoryManager::logMovement($productId, (int)$newVid, 0, (int)$vQty, 'catalog_sync', 'Catálogo', 'Nueva variante creada');
                     }
@@ -858,6 +922,7 @@ class AdminController {
             'slug' => $slug,
             'short_description' => $shortDescription,
             'description' => $description,
+            'specs' => $specs !== '' ? $specs : null,
             'price' => $price,
             'compare_price' => $comparePrice,
             'cost_price' => $costPrice,

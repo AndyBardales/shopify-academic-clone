@@ -659,6 +659,7 @@
         if (!isAdminContext) {
             initStorefrontLiveSearch();
             initProductLinksNewTab();
+            initProductVariantsAndGallerySync();
             initProductSideBasket();
         }
     });
@@ -1098,6 +1099,281 @@
                     if (submitBtn) submitBtn.style.opacity = origOpacity;
                 }
             });
+        }
+    }
+
+    function initProductVariantsAndGallerySync() {
+        const payloadEl = document.getElementById('scms-variant-payload');
+        const wrap = document.getElementById('scms-variant-selectors');
+        if (!payloadEl || !wrap) return;
+
+        let payload = null;
+        try {
+            payload = JSON.parse(payloadEl.textContent || '{}');
+        } catch (e) {
+            return;
+        }
+        const variants = Array.isArray(payload.variants) ? payload.variants : [];
+        if (!variants.length) return;
+
+        const maxParts = Math.max(1, parseInt(payload.max_parts || 1, 10) || 1);
+        const sym = payload.currency_symbol || '$';
+        const threshold = Math.max(1, parseInt(payload.low_stock_threshold || 5, 10) || 5);
+        let selectedParts = Array.isArray(payload.initial_variant && payload.initial_variant.parts)
+            ? payload.initial_variant.parts.slice(0, maxParts)
+            : (variants[0].parts || []).slice(0, maxParts);
+
+        function esc(s) {
+            return String(s || '').replace(/[&<>"']/g, function(ch) {
+                return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch] || ch;
+            });
+        }
+
+        function normalizeUrlPath(url) {
+            if (!url) return '';
+            try {
+                return new URL(url, window.location.origin).pathname;
+            } catch (e) {
+                return String(url);
+            }
+        }
+
+        function resolveBestVariantForAxis(changedAxis, preferStock) {
+            const p0 = selectedParts[0] || '';
+            const p1 = selectedParts[1] || '';
+            const p2 = selectedParts[2] || '';
+
+            const exact = variants.find(function(v) {
+                const vp = v.parts || [];
+                return vp[0] === p0 && (maxParts < 2 || vp[1] === p1) && (maxParts < 3 || vp[2] === p2);
+            });
+            if (exact && (!preferStock || parseInt(exact.quantity || 0, 10) > 0)) {
+                return exact;
+            }
+
+            if (changedAxis === 0 && maxParts >= 2) {
+                if (exact && !variants.some(function(v) { return (v.parts || [])[0] === p0 && parseInt(v.quantity || 0, 10) > 0; })) {
+                    return exact;
+                }
+                const byOpt0InStock = variants.find(function(v) {
+                    return (v.parts || [])[0] === p0 && parseInt(v.quantity || 0, 10) > 0;
+                });
+                if (byOpt0InStock) return byOpt0InStock;
+                const byOpt0 = variants.find(function(v) { return (v.parts || [])[0] === p0; });
+                if (byOpt0) return byOpt0;
+            }
+
+            if (changedAxis === 1 && maxParts >= 3) {
+                const by01InStock = variants.find(function(v) {
+                    const vp = v.parts || [];
+                    return vp[0] === p0 && vp[1] === p1 && parseInt(v.quantity || 0, 10) > 0;
+                });
+                if (by01InStock) return by01InStock;
+                const by01 = variants.find(function(v) {
+                    const vp = v.parts || [];
+                    return vp[0] === p0 && vp[1] === p1;
+                });
+                if (by01) return by01;
+            }
+
+            return exact || variants[0];
+        }
+
+        function refreshSelectorStates() {
+            for (let axis = 0; axis < maxParts; axis++) {
+                const lblEl = document.getElementById('scms_axis_label_' + axis);
+                if (lblEl) lblEl.textContent = selectedParts[axis] || '';
+            }
+            wrap.querySelectorAll('.scms-var-btn').forEach(function(btn) {
+                const ax = parseInt(btn.getAttribute('data-axis') || '0', 10);
+                const val = btn.getAttribute('data-value') || '';
+                const isSelected = (selectedParts[ax] === val);
+                btn.classList.toggle('is-active', isSelected);
+
+                let hasAvailable = false;
+                if (ax === 0) {
+                    hasAvailable = variants.some(function(v) {
+                        return (v.parts || [])[0] === val && parseInt(v.quantity || 0, 10) > 0;
+                    });
+                } else if (ax === 1) {
+                    hasAvailable = variants.some(function(v) {
+                        const vp = v.parts || [];
+                        return vp[0] === selectedParts[0] && vp[1] === val && parseInt(v.quantity || 0, 10) > 0;
+                    });
+                } else {
+                    hasAvailable = variants.some(function(v) {
+                        const vp = v.parts || [];
+                        return vp[0] === selectedParts[0] && vp[1] === selectedParts[1] && vp[2] === val && parseInt(v.quantity || 0, 10) > 0;
+                    });
+                }
+                btn.classList.toggle('is-oos', !hasAvailable);
+            });
+        }
+
+        function applyVariantRich(v, opts) {
+            if (!v) return;
+            opts = opts || {};
+
+            if (Array.isArray(v.parts)) {
+                selectedParts = v.parts.slice(0, maxParts);
+            }
+            refreshSelectorStates();
+
+            const vidInput = document.getElementById('variant_id_input');
+            if (vidInput) vidInput.value = v.id;
+
+            const priceEl = document.getElementById('display_price');
+            if (priceEl) {
+                priceEl.textContent = sym + Number(v.price || 0).toFixed(2);
+            }
+
+            const cmpEl = document.getElementById('display_compare_price');
+            const discEl = document.getElementById('display_discount_badge');
+            const cmpPrice = v.compare_price !== null && v.compare_price !== undefined ? Number(v.compare_price) : 0;
+            const curPrice = Number(v.price || 0);
+            if (cmpEl) {
+                if (cmpPrice > curPrice && cmpPrice > 0) {
+                    const prefix = cmpEl.getAttribute('data-prefix') || '';
+                    cmpEl.textContent = prefix + sym + cmpPrice.toFixed(2);
+                    cmpEl.style.display = 'inline';
+                } else {
+                    cmpEl.style.display = 'none';
+                }
+            }
+            if (discEl) {
+                const pct = parseInt(v.discount_pct || 0, 10);
+                if (pct > 0) {
+                    discEl.textContent = '-' + pct + '% dto.';
+                    discEl.style.display = 'inline-flex';
+                } else {
+                    discEl.style.display = 'none';
+                }
+            }
+
+            const qty = parseInt(v.quantity || 0, 10) || 0;
+            const stockBadge = document.getElementById('stock_badge');
+            const submitBtn = document.getElementById('submit_cart_btn');
+            const qtyInput = document.getElementById('quantity_input');
+
+            if (qtyInput) {
+                qtyInput.max = Math.max(1, qty);
+                if (parseInt(qtyInput.value || '1', 10) > qty && qty > 0) {
+                    qtyInput.value = String(qty);
+                }
+            }
+
+            if (submitBtn) {
+                submitBtn.disabled = qty <= 0;
+            }
+
+            if (stockBadge) {
+                const mode = stockBadge.getAttribute('data-stock-mode') || 'text';
+                if (qty <= 0) {
+                    stockBadge.textContent = mode === 'pill' ? 'AGOTADO' : 'Agotado';
+                    if (mode === 'pill') {
+                        stockBadge.style.background = '#FEE2E2';
+                        stockBadge.style.color = '#991B1B';
+                    } else {
+                        stockBadge.style.color = '#DC2626';
+                    }
+                } else if (qty <= threshold) {
+                    stockBadge.textContent = (mode === 'pill' ? 'ÚLTIMAS ' : 'Últimas ') + qty + (mode === 'pill' ? ' UNIDADES EN STOCK' : ' unidades en stock');
+                    if (mode === 'pill') {
+                        stockBadge.style.background = '#FEF3C7';
+                        stockBadge.style.color = '#92400E';
+                    } else {
+                        stockBadge.style.color = '#B95000';
+                    }
+                } else {
+                    stockBadge.textContent = (mode === 'pill' ? 'EN STOCK (' : 'En stock (') + qty + (mode === 'pill' ? ' DISPONIBLES)' : ' disponibles)');
+                    if (mode === 'pill') {
+                        stockBadge.style.background = '#DCFCE7';
+                        stockBadge.style.color = '#166534';
+                    } else {
+                        stockBadge.style.color = 'var(--color-primary, #008060)';
+                    }
+                }
+            }
+
+            const shortEl = document.getElementById('product_short_description');
+            if (shortEl) {
+                const sTxt = (v.short_description || '').trim();
+                shortEl.textContent = sTxt;
+                shortEl.style.display = sTxt ? 'block' : 'none';
+            }
+
+            const descWrap = document.getElementById('product_description_wrap');
+            const descBody = document.getElementById('product_description_body');
+            if (descWrap && descBody) {
+                const dTxt = (v.description || '').trim();
+                if (dTxt) {
+                    descBody.innerHTML = esc(dTxt).replace(/\r\n|\r|\n/g, '<br>');
+                    descWrap.style.display = 'block';
+                } else {
+                    descBody.innerHTML = '';
+                    descWrap.style.display = 'none';
+                }
+            }
+
+            const specsWrap = document.getElementById('scms_product_specs_wrap');
+            const specsList = document.getElementById('scms_product_specs_list');
+            if (specsWrap && specsList) {
+                const sp = Array.isArray(v.specs) ? v.specs : [];
+                if (sp.length) {
+                    specsList.innerHTML = sp.map(function(row) {
+                        return '<div class="scms-spec-row"><dt>' + esc(row.label) + '</dt><dd>' + esc(row.value) + '</dd></div>';
+                    }).join('');
+                    specsWrap.style.display = 'block';
+                } else {
+                    specsList.innerHTML = '';
+                    specsWrap.style.display = 'none';
+                }
+            }
+
+            if (!opts.skipGallerySync && v.image_url && typeof window.syncProductGalleryActive === 'function') {
+                window.syncProductGalleryActive(v.image_url);
+            }
+        }
+
+        wrap.addEventListener('click', function(e) {
+            const btn = e.target.closest('.scms-var-btn');
+            if (!btn) return;
+            const axis = parseInt(btn.getAttribute('data-axis') || '0', 10);
+            const val = btn.getAttribute('data-value') || '';
+            selectedParts[axis] = val;
+            const matched = resolveBestVariantForAxis(axis, axis < maxParts - 1);
+            applyVariantRich(matched, { skipGallerySync: false });
+        });
+
+        window.addEventListener('scms:gallery-image-changed', function(e) {
+            const detail = e && e.detail ? e.detail : {};
+            const targetPath = normalizeUrlPath(detail.src || '');
+            if (!targetPath) return;
+
+            const matchingVars = variants.filter(function(v) {
+                return v.own_image_url && normalizeUrlPath(v.own_image_url) === targetPath;
+            });
+            if (!matchingVars.length) return;
+
+            if (maxParts === 1) {
+                applyVariantRich(matchingVars[0], { skipGallerySync: true });
+                return;
+            }
+
+            const ownersOpt0 = [];
+            matchingVars.forEach(function(v) {
+                const p0 = (v.parts || [])[0] || '';
+                if (p0 && ownersOpt0.indexOf(p0) === -1) ownersOpt0.push(p0);
+            });
+            if (ownersOpt0.length === 1 && ownersOpt0[0] !== selectedParts[0]) {
+                selectedParts[0] = ownersOpt0[0];
+                const matched = resolveBestVariantForAxis(0, true);
+                applyVariantRich(matched, { skipGallerySync: true });
+            }
+        });
+
+        if (payload.initial_variant) {
+            applyVariantRich(payload.initial_variant, { skipGallerySync: false });
         }
     }
 

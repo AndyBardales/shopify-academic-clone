@@ -64,10 +64,22 @@ if (empty($opt2Label) && $maxParts >= 2) {
 if (empty($opt3Label) && $maxParts >= 3) {
     $opt3Label = 'Material / Opción 3';
 }
-$initialVariant = !empty($variants) ? $variants[0] : null;
-$initialPrice = $initialVariant ? $initialVariant['price'] : $product['price'];
+$variantPayload = \ShopCMS\Core\StorefrontExperience::buildVariantExperiencePayload(
+    $product,
+    $variants ?? [],
+    $galleryImages ?? [],
+    $baseUrl,
+    $currency
+);
+$initialVariant = $variantPayload['initial_variant'];
+$initialPrice = $initialVariant ? (float)$initialVariant['price'] : (float)$product['price'];
+$initialCompare = $initialVariant ? $initialVariant['compare_price'] : $variantPayload['base_compare_price'];
+$initialDiscountPct = $initialVariant ? (int)$initialVariant['discount_pct'] : (int)$variantPayload['base_discount_pct'];
 $initialQty = $initialVariant ? (int)$initialVariant['quantity'] : (int)$product['quantity'];
 $initialImage = ($initialVariant && !empty($initialVariant['image_url'])) ? $initialVariant['image_url'] : $product['featured_image'];
+$initialShortDesc = $initialVariant ? $initialVariant['short_description'] : $variantPayload['base_short_description'];
+$initialDesc = $initialVariant ? $initialVariant['description'] : $variantPayload['base_description'];
+$initialSpecs = $initialVariant ? $initialVariant['specs'] : $variantPayload['base_specs'];
 $revCount = count($reviews);
 $reviewLabel = ($revCount === 1) ? '1 opinión de clientes' : "{$revCount} opiniones de clientes";
 $prodCfg = $themeConfig['templates']['product']['sections'] ?? [];
@@ -126,66 +138,24 @@ $prodBuiltIn = [];
             <!-- PRECIO -->
             <div class="price-box" style="font-size: <?= (int)($pMain['price_size'] ?? 24) ?>px;">
                 <span id="display_price"><?= $currency['symbol'] ?><?= number_format($initialPrice, 2) ?></span>
-                <?php if ($product['compare_price']): ?>
-                    <span style="font-size: 18px; color: var(--color-text-light); text-decoration: line-through; margin-left: 10px;">
-                        <?= $currency['symbol'] ?><?= number_format($product['compare_price'], 2) ?>
-                    </span>
-                <?php endif; ?>
+                <span id="display_compare_price" style="display: <?= ($initialCompare !== null && $initialCompare > $initialPrice) ? 'inline' : 'none' ?>; font-size: 18px; color: var(--color-text-light); text-decoration: line-through; margin-left: 10px;">
+                    <?= ($initialCompare !== null && $initialCompare > $initialPrice) ? ($currency['symbol'] . number_format($initialCompare, 2)) : '' ?>
+                </span>
+                <span id="display_discount_badge" class="scms-discount-pill" style="display: <?= ($initialDiscountPct > 0) ? 'inline-flex' : 'none' ?>;">
+                    <?= $initialDiscountPct > 0 ? "-{$initialDiscountPct}% dto." : '' ?>
+                </span>
             </div>
 
-            <?php if (!empty($product['short_description'])): ?>
-                <p style="font-size: 15px; color: var(--color-text-light); margin-bottom: 24px; line-height: 1.6;">
-                    <?= htmlspecialchars($product['short_description']) ?>
-                </p>
-            <?php endif; ?>
+            <p id="product_short_description" style="display: <?= $initialShortDesc !== '' ? 'block' : 'none' ?>; font-size: 15px; color: var(--color-text-light); margin-bottom: 24px; line-height: 1.6;">
+                <?= htmlspecialchars($initialShortDesc) ?>
+            </p>
 
             <!-- FORMULARIO AGREGAR AL CARRITO -->
             <form method="POST" action="<?= $baseUrl ?>/cart/add">
                 <input type="hidden" name="product_id" value="<?= $product['id'] ?>">
 
-                <!-- SELECTOR DE VARIANTES COMPUESTAS (1, 2 O 3 OPCIONES DINÁMICAS) -->
-                <?php if ($maxParts >= 2 && !empty($variants)): ?>
-                    <div style="display: grid; grid-template-columns: repeat(<?= min($maxParts, 3) ?>, 1fr); gap: 14px; margin-bottom: 20px;">
-                        <div>
-                            <label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px;"><?= htmlspecialchars($opt1Label) ?>:</label>
-                            <select id="option_val_1" onchange="updateDynamicVariants()" style="width: 100%; padding: 11px; border-radius: 8px; border: 1px solid var(--color-border); font-size: 14px; font-family: inherit;">
-                                <?php foreach ($opt1Values as $c): ?>
-                                    <option value="<?= htmlspecialchars($c) ?>"><?= htmlspecialchars($c) ?></option>
-                                <?php endforeach; ?>
-                            </select>
-                        </div>
-                        <div>
-                            <label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px;"><?= htmlspecialchars($opt2Label) ?>:</label>
-                            <select id="option_val_2" onchange="updateDynamicVariants()" style="width: 100%; padding: 11px; border-radius: 8px; border: 1px solid var(--color-border); font-size: 14px; font-family: inherit;">
-                                <?php foreach ($opt2Values as $s): ?>
-                                    <option value="<?= htmlspecialchars($s) ?>"><?= htmlspecialchars($s) ?></option>
-                                <?php endforeach; ?>
-                            </select>
-                        </div>
-                        <?php if ($maxParts >= 3): ?>
-                        <div>
-                            <label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px;"><?= htmlspecialchars($opt3Label) ?>:</label>
-                            <select id="option_val_3" onchange="updateDynamicVariants()" style="width: 100%; padding: 11px; border-radius: 8px; border: 1px solid var(--color-border); font-size: 14px; font-family: inherit;">
-                                <?php foreach ($opt3Values as $m): ?>
-                                    <option value="<?= htmlspecialchars($m) ?>"><?= htmlspecialchars($m) ?></option>
-                                <?php endforeach; ?>
-                            </select>
-                        </div>
-                        <?php endif; ?>
-                    </div>
-                    <input type="hidden" name="variant_id" id="variant_id_input" value="<?= $initialVariant['id'] ?>">
-                <?php elseif (!empty($variants)): ?>
-                    <div style="margin-bottom: 20px;">
-                        <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 8px;"><?= htmlspecialchars($opt1Label ?: 'Selecciona Opción') ?>:</label>
-                        <select name="variant_id" id="variant_select" onchange="onSingleVariantChange(this)" style="width: 100%; padding: 12px; border-radius: 8px; border: 1px solid var(--color-border); font-size: 14px; font-family: inherit;">
-                            <?php foreach ($variants as $var): ?>
-                                <option value="<?= $var['id'] ?>" data-price="<?= $var['price'] ?>" data-qty="<?= $var['quantity'] ?>" data-image="<?= htmlspecialchars($var['image_url'] ?? '') ?>">
-                                    <?= htmlspecialchars($var['title']) ?> — <?= $currency['symbol'] ?><?= number_format($var['price'], 2) ?> (<?= $var['quantity'] ?> en stock)
-                                </option>
-                            <?php endforeach; ?>
-                        </select>
-                    </div>
-                <?php endif; ?>
+                <!-- SELECTORES VISUALES DE VARIANTES -->
+                <?= \ShopCMS\Core\StorefrontExperience::renderVariantSelectors($variantPayload) ?>
 
                 <!-- DISPONIBILIDAD DE STOCK (SEGUN VARIANTE SELECCIONADA) -->
                 <div id="stock_status_container" style="margin-bottom: 20px; font-size: 13px; display: flex; align-items: center; gap: 6px;">
@@ -231,23 +201,22 @@ $prodBuiltIn = [];
                 <?php \ShopCMS\Core\PluginManager::doAction('product_page_buttons', $product); ?>
             </form>
 
-            <!-- DESCRIPCIÓN DETALLADA -->
-            <?php if (!empty($product['description'])): ?>
-                <?php
-                $descTitle = 'Descripción y Especificaciones';
-                if (!empty($product['category_name']) && in_array(strtolower($product['category_name']), ['ropa', 'moda', 'calzado', 'prendas'])) {
-                    $descTitle = 'Descripción y Cuidados de la Prenda';
-                } elseif (!empty($product['category_name']) && in_array(strtolower($product['category_name']), ['alimentos', 'comida', 'bebidas', 'gourmet'])) {
-                    $descTitle = 'Información y Detalles del Producto';
-                }
-                ?>
-                <div style="margin-top: 32px; padding-top: 24px; border-top: 1px solid var(--color-border);">
-                    <h3 style="font-size: 16px; font-weight: 700; margin-bottom: 12px;"><?= $descTitle ?></h3>
-                    <div style="font-size: 14px; color: var(--color-text); line-height: 1.7;">
-                        <?= nl2br(htmlspecialchars($product['description'])) ?>
-                    </div>
+            <!-- DESCRIPCIÓN DETALLADA Y ESPECIFICACIONES -->
+            <?php
+            $descTitle = 'Descripción y Especificaciones';
+            if (!empty($product['category_name']) && in_array(strtolower($product['category_name']), ['ropa', 'moda', 'calzado', 'prendas'])) {
+                $descTitle = 'Descripción y Cuidados de la Prenda';
+            } elseif (!empty($product['category_name']) && in_array(strtolower($product['category_name']), ['alimentos', 'comida', 'bebidas', 'gourmet'])) {
+                $descTitle = 'Información y Detalles del Producto';
+            }
+            ?>
+            <div id="product_description_wrap" style="display: <?= $initialDesc !== '' ? 'block' : 'none' ?>; margin-top: 32px; padding-top: 24px; border-top: 1px solid var(--color-border);">
+                <h3 style="font-size: 16px; font-weight: 700; margin-bottom: 12px;"><?= $descTitle ?></h3>
+                <div id="product_description_body" style="font-size: 14px; color: var(--color-text); line-height: 1.7;">
+                    <?= nl2br(htmlspecialchars($initialDesc)) ?>
                 </div>
-            <?php endif; ?>
+            </div>
+            <?= \ShopCMS\Core\StorefrontExperience::renderProductSpecsBlock($initialSpecs) ?>
         </div>
     </div>
     </div>
@@ -394,127 +363,6 @@ $prodBuiltIn = [];
     <main class="scms-template-sections">
         <?php \ShopCMS\Core\ThemeCustomizer::renderOrderedSections($themeSlug ?? 'minimal-shop', 'product', $prodBuiltIn, $baseUrl); ?>
     </main>
-
-<script>
-const variantsData = <?= json_encode($variants) ?>;
-const baseUrl = "<?= $baseUrl ?>";
-const currencySymbol = "<?= $currency['symbol'] ?>";
-const defaultProductImage = <?= json_encode(\ShopCMS\Core\ThemeManager::resolveImageUrl(!empty($product['featured_image']) ? $product['featured_image'] : ($galleryImages[0]['image_url'] ?? ''), $baseUrl)) ?>;
-const lowStockThreshold = <?= (int)($product['low_stock_threshold'] ?? 5) ?>;
-const maxParts = <?= (int)$maxParts ?>;
-
-function applyVariant(v) {
-    if (!v) return;
-
-    // 1. Actualizar ID en el formulario
-    const input = document.getElementById('variant_id_input');
-    if (input) input.value = v.id;
-
-    // 2. Actualizar precio
-    const displayPrice = document.getElementById('display_price');
-    if (displayPrice) {
-        displayPrice.innerText = currencySymbol + parseFloat(v.price).toFixed(2);
-    }
-
-    // 3. Actualizar stock y badge
-    const qty = parseInt(v.quantity, 10);
-    const stockBadge = document.getElementById('stock_badge');
-    const submitBtn = document.getElementById('submit_cart_btn');
-    const qtyInput = document.getElementById('quantity_input');
-
-    if (qtyInput) {
-        qtyInput.max = Math.max(1, qty);
-        if (parseInt(qtyInput.value, 10) > qty && qty > 0) {
-            qtyInput.value = qty;
-        }
-    }
-
-    if (stockBadge) {
-        if (qty <= 0) {
-            stockBadge.style.color = '#D72C0D';
-            stockBadge.innerText = 'Agotado';
-            if (submitBtn) submitBtn.disabled = true;
-        } else if (qty <= lowStockThreshold) {
-            stockBadge.style.color = '#B95000';
-            stockBadge.innerText = 'Últimas ' + qty + ' unidades en stock';
-            if (submitBtn) submitBtn.disabled = false;
-        } else {
-            stockBadge.style.color = '#008060';
-            stockBadge.innerText = 'En stock (' + qty + ' disponibles)';
-            if (submitBtn) submitBtn.disabled = false;
-        }
-    }
-
-    // 4. Actualizar imagen según la variante seleccionada
-    const imgElem = document.getElementById('main_product_image');
-    if (imgElem) {
-        if (v.image_url && v.image_url.trim() !== '') {
-            const rawV = v.image_url.trim();
-            imgElem.src = (/^https?:\/\//i.test(rawV) || rawV.indexOf('/') === 0) ? rawV : (baseUrl + '/' + rawV.replace(/^\/+/, ''));
-        } else if (defaultProductImage) {
-            imgElem.src = defaultProductImage;
-        }
-        if (typeof window.syncProductGalleryActive === 'function') {
-            window.syncProductGalleryActive(imgElem.src);
-        }
-    }
-}
-
-function updateDynamicVariants() {
-    if (maxParts >= 2) {
-        const o1Elem = document.getElementById('option_val_1');
-        const o2Elem = document.getElementById('option_val_2');
-        const o3Elem = document.getElementById('option_val_3');
-
-        const v1 = o1Elem ? o1Elem.value.trim() : '';
-        const v2 = o2Elem ? o2Elem.value.trim() : '';
-        const v3 = o3Elem ? o3Elem.value.trim() : '';
-
-        let targetTitle = v1 + ' / ' + v2;
-        if (maxParts >= 3 && v3 !== '') {
-            targetTitle += ' / ' + v3;
-        }
-
-        let matched = variantsData.find(v => v.title === targetTitle);
-        if (!matched) {
-            if (maxParts >= 3) {
-                matched = variantsData.find(v => v.title.startsWith(v1 + ' / ' + v2 + ' / ')) ||
-                          variantsData.find(v => v.title.startsWith(v1 + ' / ')) ||
-                          variantsData[0];
-            } else {
-                matched = variantsData.find(v => v.title.startsWith(v1 + ' / ')) ||
-                          variantsData[0];
-            }
-
-            if (matched) {
-                const parts = matched.title.split(' / ');
-                if (parts[1] && o2Elem) o2Elem.value = parts[1].trim();
-                if (parts[2] && o3Elem) o3Elem.value = parts[2].trim();
-            }
-        }
-
-        if (matched) {
-            applyVariant(matched);
-        }
-    }
-}
-
-function onSingleVariantChange(select) {
-    const id = parseInt(select.value, 10);
-    const matched = variantsData.find(v => parseInt(v.id, 10) === id);
-    if (matched) {
-        applyVariant(matched);
-    }
-}
-
-document.addEventListener('DOMContentLoaded', function() {
-    if (maxParts >= 2) {
-        updateDynamicVariants();
-    } else if (variantsData.length > 0) {
-        applyVariant(variantsData[0]);
-    }
-});
-</script>
 
 <?php \ShopCMS\Core\ThemeManager::renderFooter(get_defined_vars()); ?>
 

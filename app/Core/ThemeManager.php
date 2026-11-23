@@ -282,7 +282,7 @@ class ThemeManager {
         }
         require $headerFile;
         echo Security::csrfMetaTag() . PHP_EOL;
-        echo '<link rel="stylesheet" href="' . $baseUrl . '/assets/css/shopcms-guard.css?v=20261123c">' . PHP_EOL;
+        echo '<link rel="stylesheet" href="' . $baseUrl . '/assets/css/shopcms-guard.css?v=20261123d">' . PHP_EOL;
         echo ThemeCustomizer::renderGlobalStyleTag($theme) . PHP_EOL;
 
         if (Settings::getBool('maintenance_mode', false) && Auth::isAdmin() && !ThemeCustomizer::isEditorPreview()) {
@@ -339,7 +339,7 @@ class ThemeManager {
             echo StorefrontExperience::renderProductSideBasket($baseUrl) . PHP_EOL;
         }
 
-        echo '<script src="' . $baseUrl . '/assets/js/shopcms-guard.js?v=20261123c"></script>' . PHP_EOL;
+        echo '<script src="' . $baseUrl . '/assets/js/shopcms-guard.js?v=20261123d"></script>' . PHP_EOL;
         echo ThemeCustomizer::renderEditorBridgeScript($theme) . PHP_EOL;
         require $footerFile;
     }
@@ -523,7 +523,7 @@ class ThemeManager {
                 var slides = <?= json_encode(array_column($slides, 'src'), JSON_UNESCAPED_SLASHES) ?>;
                 var curIdx = <?= (int)$activeIdx ?>;
 
-                function applyGalleryUI(idx) {
+                function applyGalleryUI(idx, silent) {
                     if (!slides.length) return;
                     curIdx = ((idx % slides.length) + slides.length) % slides.length;
                     var src = slides[curIdx];
@@ -542,6 +542,12 @@ class ThemeManager {
                         btn.classList.toggle('is-active', active);
                         btn.style.borderColor = active ? 'var(--color-primary, #008060)' : 'var(--color-border, #E5E7EB)';
                     });
+
+                    if (!silent && typeof window.dispatchEvent === 'function') {
+                        window.dispatchEvent(new CustomEvent('scms:gallery-image-changed', {
+                            detail: { src: src, index: curIdx }
+                        }));
+                    }
                 }
 
                 window.scmsSelectGalleryIndex = function(idx) {
@@ -563,17 +569,19 @@ class ThemeManager {
                 };
                 window.syncProductGalleryActive = function(src) {
                     var idx = slides.indexOf(src);
+                    if (idx === -1 && src) {
+                        try {
+                            var targetPath = new URL(src, window.location.origin).pathname;
+                            for (var k = 0; k < slides.length; k++) {
+                                if (new URL(slides[k], window.location.origin).pathname === targetPath) {
+                                    idx = k;
+                                    break;
+                                }
+                            }
+                        } catch (e) {}
+                    }
                     if (idx !== -1) {
-                        curIdx = idx;
-                        var cnt = document.getElementById('scms_gallery_counter');
-                        var lbCnt = document.getElementById('scms_lightbox_counter');
-                        if (cnt) cnt.textContent = (curIdx + 1) + ' / ' + slides.length;
-                        if (lbCnt) lbCnt.textContent = (curIdx + 1) + ' / ' + slides.length;
-                        document.querySelectorAll('#scms_gallery_thumbs .scms-gallery-thumb').forEach(function(btn, i) {
-                            var active = (i === curIdx);
-                            btn.classList.toggle('is-active', active);
-                            btn.style.borderColor = active ? 'var(--color-primary, #008060)' : 'var(--color-border, #E5E7EB)';
-                        });
+                        applyGalleryUI(idx, true);
                     }
                 };
                 document.addEventListener('keydown', function(e) {

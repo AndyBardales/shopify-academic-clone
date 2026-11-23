@@ -215,4 +215,289 @@ class StorefrontExperience {
         <?php
         return ob_get_clean();
     }
+
+    private static bool $variantSchemaEnsured = false;
+
+    /**
+     * Garantiza de forma idempotente las columnas extendidas para variantes ricas y ficha técnica.
+     */
+    public static function ensureVariantRichColumns(): void {
+        if (self::$variantSchemaEnsured) {
+            return;
+        }
+        self::$variantSchemaEnsured = true;
+        try {
+            $prodCols = array_column(Database::fetchAll("SHOW COLUMNS FROM " . Database::table('products')), 'Field');
+            if (!in_array('specs', $prodCols, true)) {
+                Database::query("ALTER TABLE " . Database::table('products') . " ADD COLUMN `specs` TEXT NULL AFTER `description`");
+            }
+            $varCols = array_column(Database::fetchAll("SHOW COLUMNS FROM " . Database::table('product_variants')), 'Field');
+            if (!in_array('short_description', $varCols, true)) {
+                Database::query("ALTER TABLE " . Database::table('product_variants') . " ADD COLUMN `short_description` TEXT NULL AFTER `image_url`");
+            }
+            if (!in_array('description', $varCols, true)) {
+                Database::query("ALTER TABLE " . Database::table('product_variants') . " ADD COLUMN `description` TEXT NULL AFTER `short_description`");
+            }
+            if (!in_array('specs', $varCols, true)) {
+                Database::query("ALTER TABLE " . Database::table('product_variants') . " ADD COLUMN `specs` TEXT NULL AFTER `description`");
+            }
+        } catch (\Throwable $e) {
+            // No bloquear flujo si no hay permisos DDL
+        }
+    }
+
+    /**
+     * Convierte texto multilinea ("Clave: Valor") o JSON en filas estructuradas de especificaciones.
+     */
+    public static function parseSpecs(?string $raw): array {
+        $text = trim((string)$raw);
+        if ($text === '') {
+            return [];
+        }
+        if ($text[0] === '[' || $text[0] === '{') {
+            $decoded = json_decode($text, true);
+            if (is_array($decoded)) {
+                $rows = [];
+                foreach ($decoded as $k => $v) {
+                    if (is_array($v) && isset($v['label'])) {
+                        $rows[] = ['label' => trim((string)$v['label']), 'value' => trim((string)($v['value'] ?? ''))];
+                    } elseif (is_string($k)) {
+                        $rows[] = ['label' => trim($k), 'value' => trim((string)$v)];
+                    }
+                }
+                if (!empty($rows)) {
+                    return $rows;
+                }
+            }
+        }
+        $lines = preg_split('/\r\n|\r|\n/', $text) ?: [];
+        $rows = [];
+        foreach ($lines as $line) {
+            $line = trim($line);
+            if ($line === '') {
+                continue;
+            }
+            if (strpos($line, ':') !== false) {
+                [$lbl, $val] = explode(':', $line, 2);
+                $rows[] = ['label' => trim($lbl), 'value' => trim($val)];
+            } else {
+                $rows[] = ['label' => 'Detalle', 'value' => $line];
+            }
+        }
+        return $rows;
+    }
+
+    /**
+     * Prepara el payload unificado para swatches visuales, chips de tallas y sincronización bidireccional galería-variante.
+     */
+    public static function buildVariantExperiencePayload(
+        array $product,
+        array $variants,
+        array $galleryImages,
+        string $baseUrl,
+        array $currency
+    ): array {
+        $maxParts = 1;
+        foreach ($variants as $v) {
+            $pCount = count(array_filter(array_map('trim', explode(' / ', (string)($v['title'] ?? ''))), fn($x) => $x !== ''));
+            if ($pCount > $maxParts) {
+                $maxParts = min(3, $pCount);
+            }
+        }
+
+        $axesValues = [[], [], []];
+        $axisImages = [[], [], []];
+        foreach ($variants as $v) {
+            $parts = array_map('trim', explode(' / ', (string)($v['title'] ?? '')));
+            $rawImg = trim((string)($v['image_url'] ?? ''));
+            $resolvedImg = $rawImg !== '' ? ThemeManager::resolveImageUrl($rawImg, $baseUrl) : '';
+            for ($a = 0; $a < $maxParts; $a++) {
+                $val = $parts[$a] ?? '';
+                if ($val === '') continue;
+                if (!in_array($val, $axesValues[$a], true)) {
+                    $axesValues[$a][] = $val;
+                }
+                if ($resolvedImg !== '' && empty($axisImages[$a][$val])) {
+                    $axisImages[$a][$val] = $resolvedImg;
+                }
+            }
+        }
+
+        $labels = [
+            trim((string)($product['option1_name'] ?? '')),
+            trim((string)($product['option2_name'] ?? '')),
+            trim((string)($product['option3_name'] ?? '')),
+        ];
+        if ($labels[0] === '') {
+            $s1 = implode(' ', $axesValues[0]);
+            if (preg_match('/\b(GB|TB|MB|RAM|SSD)\b/i', $s1)) $labels[0] = 'Almacenamiento';
+            elseif (preg_match('/\b(kg|g|gr|ml|l|lt|oz|botella|caja|pack)\b/i', $s1)) $labels[0] = 'Presentación';
+            elseif ($maxParts >= 2) $labels[0] = 'Color';
+            else $labels[0] = 'Opción';
+        }
+        if ($maxParts >= 2 && $labels[1] === '') {
+            $s2 = implode(' ', $axesValues[1]);
+            if (preg_match('/\b(kg|g|gr|ml|l|lt|oz|botella|caja|pack)\b/i', $s2)) $labels[1] = 'Peso / Cantidad';
+            elseif (preg_match('/\b(S|M|L|XL|XXL|XS|[0-9]{2})\b/', $s2)) $labels[1] = 'Talla';
+            elseif (preg_match('/\b(GB|TB|MB|RAM|SSD)\b/i', $s2)) $labels[1] = 'Memoria';
+            else $labels[1] = 'Opción 2';
+        }
+        if ($maxParts >= 3 && $labels[2] === '') {
+            $labels[2] = 'Acabado / Material';
+        }
+
+        $basePrice = (float)($product['price'] ?? 0);
+        $baseCompare = !empty($product['compare_price']) ? (float)$product['compare_price'] : null;
+        $baseShort = trim((string)($product['short_description'] ?? ''));
+        $baseDesc = trim((string)($product['description'] ?? ''));
+        $baseSpecsRaw = trim((string)($product['specs'] ?? ''));
+        $baseFeaturedImg = trim((string)($product['featured_image'] ?? ''));
+        $defaultImgResolved = $baseFeaturedImg !== '' ? ThemeManager::resolveImageUrl($baseFeaturedImg, $baseUrl) : '';
+
+        $enrichedVariants = [];
+        foreach ($variants as $v) {
+            $vPrice = (float)($v['price'] ?? $basePrice);
+            $vCompare = (isset($v['compare_price']) && $v['compare_price'] !== null && (float)$v['compare_price'] > 0)
+                ? (float)$v['compare_price']
+                : $baseCompare;
+            $discountPct = ($vCompare !== null && $vCompare > $vPrice && $vCompare > 0)
+                ? (int)round((($vCompare - $vPrice) / $vCompare) * 100)
+                : 0;
+
+            $vShort = trim((string)($v['short_description'] ?? ''));
+            $vDesc = trim((string)($v['description'] ?? ''));
+            $vSpecsRaw = trim((string)($v['specs'] ?? ''));
+
+            $rawVImg = trim((string)($v['image_url'] ?? ''));
+            $resolvedVImg = $rawVImg !== '' ? ThemeManager::resolveImageUrl($rawVImg, $baseUrl) : $defaultImgResolved;
+            $parts = array_slice(array_map('trim', explode(' / ', (string)($v['title'] ?? ''))), 0, $maxParts);
+
+            $enrichedVariants[] = [
+                'id' => (int)$v['id'],
+                'title' => (string)$v['title'],
+                'parts' => $parts,
+                'sku' => (string)($v['sku'] ?? ($product['sku'] ?? '')),
+                'price' => round($vPrice, 2),
+                'compare_price' => ($vCompare !== null && $vCompare > $vPrice) ? round($vCompare, 2) : null,
+                'discount_pct' => $discountPct,
+                'quantity' => (int)($v['quantity'] ?? 0),
+                'image_url' => $resolvedVImg,
+                'own_image_url' => $rawVImg !== '' ? $resolvedVImg : '',
+                'short_description' => $vShort !== '' ? $vShort : $baseShort,
+                'description' => $vDesc !== '' ? $vDesc : $baseDesc,
+                'specs' => self::parseSpecs($vSpecsRaw !== '' ? $vSpecsRaw : $baseSpecsRaw),
+            ];
+        }
+
+        $baseSpecs = self::parseSpecs($baseSpecsRaw);
+        $initialVariant = $enrichedVariants[0] ?? null;
+
+        return [
+            'product_id' => (int)$product['id'],
+            'max_parts' => $maxParts,
+            'labels' => array_slice($labels, 0, $maxParts),
+            'axes' => array_slice($axesValues, 0, $maxParts),
+            'axis_images' => array_slice($axisImages, 0, $maxParts),
+            'currency_symbol' => (string)($currency['symbol'] ?? '$'),
+            'low_stock_threshold' => max(1, (int)($product['low_stock_threshold'] ?? 5)),
+            'default_image' => $defaultImgResolved,
+            'base_compare_price' => ($baseCompare !== null && $baseCompare > $basePrice) ? round($baseCompare, 2) : null,
+            'base_discount_pct' => ($baseCompare !== null && $baseCompare > $basePrice && $baseCompare > 0)
+                ? (int)round((($baseCompare - $basePrice) / $baseCompare) * 100)
+                : 0,
+            'base_short_description' => $baseShort,
+            'base_description' => $baseDesc,
+            'base_specs' => $baseSpecs,
+            'variants' => $enrichedVariants,
+            'initial_variant' => $initialVariant,
+        ];
+    }
+
+    /**
+     * Renderiza selectores visuales (miniaturas para eje visual y chips/píldoras para tallas/opciones).
+     */
+    public static function renderVariantSelectors(array $payload): string {
+        $variants = $payload['variants'] ?? [];
+        if (empty($variants)) {
+            return '';
+        }
+        $maxParts = (int)($payload['max_parts'] ?? 1);
+        $labels = $payload['labels'] ?? ['Opción'];
+        $axes = $payload['axes'] ?? [[]];
+        $axisImages = $payload['axis_images'] ?? [[]];
+        $initial = $payload['initial_variant'] ?? $variants[0];
+        $initParts = $initial['parts'] ?? [];
+        $jsonPayload = json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
+        ob_start();
+        ?>
+        <div id="scms-variant-selectors" class="scms-variant-selectors">
+            <?php for ($axis = 0; $axis < $maxParts; $axis++):
+                $vals = $axes[$axis] ?? [];
+                if (empty($vals)) continue;
+                $axisLabel = (string)($labels[$axis] ?? ('Opción ' . ($axis + 1)));
+                $curVal = (string)($initParts[$axis] ?? $vals[0]);
+                $imgMap = $axisImages[$axis] ?? [];
+                $useVisualSwatches = ($axis === 0 && !empty($imgMap));
+            ?>
+                <div class="scms-var-group" data-axis="<?= $axis ?>">
+                    <div class="scms-var-label-row">
+                        <span class="scms-var-label"><?= htmlspecialchars($axisLabel) ?>:</span>
+                        <strong class="scms-var-selected-text" id="scms_axis_label_<?= $axis ?>"><?= htmlspecialchars($curVal) ?></strong>
+                    </div>
+                    <div class="scms-var-options <?= $useVisualSwatches ? 'is-swatches' : 'is-chips' ?>">
+                        <?php foreach ($vals as $val):
+                            $isActive = ($val === $curVal);
+                            $thumb = $imgMap[$val] ?? '';
+                        ?>
+                            <?php if ($useVisualSwatches && $thumb !== ''): ?>
+                                <button type="button"
+                                        class="scms-var-btn scms-var-swatch <?= $isActive ? 'is-active' : '' ?>"
+                                        data-axis="<?= $axis ?>"
+                                        data-value="<?= htmlspecialchars($val) ?>"
+                                        title="<?= htmlspecialchars($val) ?>"
+                                        aria-label="<?= htmlspecialchars($axisLabel . ': ' . $val) ?>">
+                                    <img src="<?= htmlspecialchars($thumb) ?>" alt="<?= htmlspecialchars($val) ?>">
+                                </button>
+                            <?php else: ?>
+                                <button type="button"
+                                        class="scms-var-btn scms-var-chip <?= $isActive ? 'is-active' : '' ?>"
+                                        data-axis="<?= $axis ?>"
+                                        data-value="<?= htmlspecialchars($val) ?>">
+                                    <?= htmlspecialchars($val) ?>
+                                </button>
+                            <?php endif; ?>
+                        <?php endforeach; ?>
+                    </div>
+                </div>
+            <?php endfor; ?>
+
+            <input type="hidden" name="variant_id" id="variant_id_input" value="<?= (int)$initial['id'] ?>">
+            <script type="application/json" id="scms-variant-payload"><?= $jsonPayload ?></script>
+        </div>
+        <?php
+        return ob_get_clean();
+    }
+
+    /**
+     * Renderiza la tabla de características técnicas del producto o variante activa.
+     */
+    public static function renderProductSpecsBlock(array $specs): string {
+        $hasSpecs = !empty($specs);
+        ob_start();
+        ?>
+        <div id="scms_product_specs_wrap" class="scms-specs-wrap" style="display: <?= $hasSpecs ? 'block' : 'none' ?>;">
+            <h4 class="scms-specs-title">Características técnicas</h4>
+            <dl id="scms_product_specs_list" class="scms-specs-grid">
+                <?php foreach ($specs as $sp): ?>
+                    <div class="scms-spec-row">
+                        <dt><?= htmlspecialchars((string)$sp['label']) ?></dt>
+                        <dd><?= htmlspecialchars((string)$sp['value']) ?></dd>
+                    </div>
+                <?php endforeach; ?>
+            </dl>
+        </div>
+        <?php
+        return ob_get_clean();
+    }
 }

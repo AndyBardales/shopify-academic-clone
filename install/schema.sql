@@ -46,6 +46,7 @@ CREATE TABLE IF NOT EXISTS `{prefix}products` (
     `slug` VARCHAR(255) NOT NULL UNIQUE,
     `short_description` TEXT NULL,
     `description` LONGTEXT NULL,
+    `specs` TEXT NULL,
     `price` DECIMAL(10,2) NOT NULL DEFAULT 0.00,
     `compare_price` DECIMAL(10,2) NULL,
     `cost_price` DECIMAL(10,2) NULL,
@@ -91,6 +92,9 @@ CREATE TABLE IF NOT EXISTS `{prefix}product_variants` (
     `compare_price` DECIMAL(10,2) NULL,
     `quantity` INT DEFAULT 0,
     `image_url` VARCHAR(255) NULL,
+    `short_description` TEXT NULL,
+    `description` TEXT NULL,
+    `specs` TEXT NULL,
     `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (`product_id`) REFERENCES `{prefix}products`(`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

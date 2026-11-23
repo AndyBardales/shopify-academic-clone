@@ -130,6 +130,7 @@ class StoreController {
     }
 
     public function product(string $slug): void {
+        StorefrontExperience::ensureVariantRichColumns();
         $product = Database::fetch("
             SELECT p.*, c.name as category_name 
             FROM " . Database::table('products') . " p
