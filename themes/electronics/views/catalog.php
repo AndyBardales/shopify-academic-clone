@@ -1,12 +1,20 @@
 <?php
 use ShopCMS\Core\ThemeCustomizer;
 use ShopCMS\Core\ThemeManager;
+use ShopCMS\Core\CatalogHelper;
 
 ThemeManager::renderHeader(get_defined_vars());
 
 $catCfg = $themeConfig['templates']['catalog']['sections'] ?? [];
 $hdrSec = $catCfg['catalog_header'] ?? [];
 $fltSec = $catCfg['catalog_filters'] ?? [];
+
+$filters = $filters ?? CatalogHelper::sanitizeFilters(['q' => $search ?? '', 'category' => $activeCategory ?? '']);
+$totalProducts = (int)($totalProducts ?? count($products ?? []));
+$totalPages = (int)($totalPages ?? 1);
+$currentPage = (int)($currentPage ?? 1);
+$showingFrom = (int)($showingFrom ?? ($totalProducts > 0 ? 1 : 0));
+$showingTo = (int)($showingTo ?? count($products ?? []));
 
 $builtInSections = [];
 
@@ -19,7 +27,7 @@ ob_start(); ?>
                 <p style="font-size: 13px; color: var(--color-text-light);" data-theme-field="subtitle"><?= htmlspecialchars($hdrSec['subtitle'] ?? 'Arquitectura técnica, componentes y periféricos de alto rendimiento.') ?></p>
             </div>
             <div style="font-family: var(--font-mono); font-size: 12px; color: var(--color-primary); font-weight: 700;">
-                TOTAL ITEMS: <?= count($products) ?> REGISTRADOS
+                TOTAL ITEMS: <?= $totalProducts ?> REGISTRADOS
             </div>
         </div>
     </div>
@@ -29,25 +37,20 @@ ob_start(); ?>
 ob_start(); ?>
 <section data-theme-section="catalog_filters" data-section-label="Filtros de Búsqueda" style="margin-bottom: 20px;">
     <div class="container">
-        <form method="GET" action="<?= $baseUrl ?>/catalog" style="background: #FFFFFF; border: 1px solid var(--color-border); border-radius: 8px; padding: 14px 18px; display: flex; gap: 12px; flex-wrap: wrap; align-items: center;">
-            <?php if (($fltSec['show_search'] ?? true) !== false): ?>
-                <input type="text" name="q" placeholder="Buscar modelo (Pro, Max, Cable...)" value="<?= htmlspecialchars($search) ?>" style="flex: 2; min-width: 200px; padding: 9px 12px; border: 1px solid var(--color-border); border-radius: 4px; font-size: 13px;">
-            <?php endif; ?>
-            <?php if (($fltSec['show_categories'] ?? true) !== false): ?>
-                <select name="category" style="flex: 1; min-width: 170px; padding: 9px 12px; border: 1px solid var(--color-border); border-radius: 4px; font-size: 13px; background: #FFF;">
-                    <option value="">Todas las familias</option>
-                    <?php foreach ($categories as $cat): ?>
-                        <option value="<?= htmlspecialchars($cat['slug']) ?>" <?= $activeCategory === $cat['slug'] ? 'selected' : '' ?>>
-                            <?= htmlspecialchars($cat['name']) ?>
-                        </option>
-                    <?php endforeach; ?>
-                </select>
-            <?php endif; ?>
-            <button type="submit" class="btn-tech" style="padding: 9px 18px;">Aplicar Filtros</button>
-            <?php if (!empty($search) || !empty($activeCategory)): ?>
-                <a href="<?= $baseUrl ?>/catalog" class="btn-store btn-store-secondary" style="padding: 9px 14px; font-size: 12px;">Reset</a>
-            <?php endif; ?>
-        </form>
+        <div style="background: #FFFFFF; border: 1px solid var(--color-border); border-radius: 8px; padding: 14px 18px;">
+            <?= CatalogHelper::renderFilterFields($filters, $categories ?? [], $fltSec, $currency ?? ['symbol' => '$'], [
+                'base_url' => $baseUrl,
+                'btn_class' => 'btn-tech',
+                'btn_style' => 'padding: 9px 18px;',
+                'radius' => '4px',
+                'search_placeholder' => 'Buscar modelo o SKU (Pro, Max, SKU-01...)',
+                'category_placeholder' => 'Todas las familias',
+                'total_products' => $totalProducts,
+                'showing_from' => $showingFrom,
+                'showing_to' => $showingTo,
+                'btn_label' => 'Aplicar Filtros',
+            ]) ?>
+        </div>
     </div>
 </section>
 <?php $builtInSections['catalog_filters'] = ob_get_clean();
@@ -93,6 +96,7 @@ ob_start(); ?>
                     </div>
                 <?php endforeach; ?>
             </div>
+            <?= CatalogHelper::renderPagination($baseUrl, $filters, $currentPage, $totalPages, ['radius' => '4px']) ?>
         <?php endif; ?>
     </div>
 </section>

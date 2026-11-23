@@ -1,6 +1,7 @@
 <?php
 use ShopCMS\Core\ThemeCustomizer;
 use ShopCMS\Core\ThemeManager;
+use ShopCMS\Core\CatalogHelper;
 
 ThemeManager::renderHeader(get_defined_vars());
 
@@ -9,14 +10,26 @@ $hdrSec = $catCfg['catalog_header'] ?? [];
 $fltSec = $catCfg['catalog_filters'] ?? [];
 $grdSec = $catCfg['catalog_grid'] ?? [];
 
+$filters = $filters ?? CatalogHelper::sanitizeFilters(['q' => $search ?? '', 'category' => $activeCategory ?? '']);
+$totalProducts = (int)($totalProducts ?? count($products ?? []));
+$totalPages = (int)($totalPages ?? 1);
+$currentPage = (int)($currentPage ?? 1);
+$showingFrom = (int)($showingFrom ?? ($totalProducts > 0 ? 1 : 0));
+$showingTo = (int)($showingTo ?? count($products ?? []));
+
 $builtInSections = [];
 
 // 1. CABECERA DE CATÁLOGO
 ob_start(); ?>
 <section data-theme-section="catalog_header" data-section-label="Cabecera de Catálogo" style="padding: <?= (int)($hdrSec['padding_y'] ?? 16) ?>px 0;">
-    <div class="container">
-        <h1 style="font-size: <?= (int)($hdrSec['title_size'] ?? 28) ?>px; font-weight: 700; margin-bottom: 8px;" data-theme-field="title"><?= htmlspecialchars($hdrSec['title'] ?? 'Catálogo de Productos') ?></h1>
-        <p style="color: var(--color-text-light);" data-theme-field="subtitle"><?= htmlspecialchars($hdrSec['subtitle'] ?? 'Encuentra todo lo que buscas con nuestras opciones y filtros.') ?></p>
+    <div class="container" style="display: flex; justify-content: space-between; align-items: flex-end; flex-wrap: wrap; gap: 12px;">
+        <div>
+            <h1 style="font-size: <?= (int)($hdrSec['title_size'] ?? 28) ?>px; font-weight: 700; margin-bottom: 8px;" data-theme-field="title"><?= htmlspecialchars($hdrSec['title'] ?? 'Catálogo de Productos') ?></h1>
+            <p style="color: var(--color-text-light);" data-theme-field="subtitle"><?= htmlspecialchars($hdrSec['subtitle'] ?? 'Encuentra todo lo que buscas con nuestras opciones y filtros.') ?></p>
+        </div>
+        <div style="font-size: 13px; color: var(--color-text-light); font-weight: 600;">
+            <?= $totalProducts ?> producto<?= $totalProducts === 1 ? '' : 's' ?>
+        </div>
     </div>
 </section>
 <?php $builtInSections['catalog_header'] = ob_get_clean();
@@ -25,26 +38,17 @@ ob_start(); ?>
 ob_start(); ?>
 <section data-theme-section="catalog_filters" data-section-label="Barra de Filtros" style="margin-bottom: 24px;">
     <div class="container">
-        <div style="display: flex; gap: 16px; flex-wrap: wrap; background: var(--color-surface); padding: 16px; border-radius: 10px; border: 1px solid var(--color-border);">
-            <form method="GET" action="<?= $baseUrl ?>/catalog" style="display: flex; gap: 12px; flex: 1; flex-wrap: wrap;">
-                <?php if (($fltSec['show_search'] ?? true) !== false): ?>
-                    <input type="text" name="q" placeholder="Buscar por palabra clave..." value="<?= htmlspecialchars($search) ?>" style="flex: 2; min-width: 200px; padding: 10px 14px; border: 1px solid var(--color-border); border-radius: 8px; font-size: 14px;">
-                <?php endif; ?>
-                <?php if (($fltSec['show_categories'] ?? true) !== false): ?>
-                    <select name="category" style="flex: 1; min-width: 160px; padding: 10px 14px; border: 1px solid var(--color-border); border-radius: 8px; font-size: 14px;">
-                        <option value="">Todas las categorías</option>
-                        <?php foreach ($categories as $cat): ?>
-                            <option value="<?= htmlspecialchars($cat['slug']) ?>" <?= $activeCategory === $cat['slug'] ? 'selected' : '' ?>>
-                                <?= htmlspecialchars($cat['name']) ?>
-                            </option>
-                        <?php endforeach; ?>
-                    </select>
-                <?php endif; ?>
-                <button type="submit" class="btn-store btn-store-primary" style="padding: 10px 20px;">Filtrar</button>
-                <?php if (!empty($search) || !empty($activeCategory)): ?>
-                    <a href="<?= $baseUrl ?>/catalog" class="btn-store btn-store-secondary" style="padding: 10px 16px;">Limpiar</a>
-                <?php endif; ?>
-            </form>
+        <div style="background: var(--color-surface); padding: 16px; border-radius: 10px; border: 1px solid var(--color-border);">
+            <?= CatalogHelper::renderFilterFields($filters, $categories ?? [], $fltSec, $currency ?? ['symbol' => '$'], [
+                'base_url' => $baseUrl,
+                'btn_class' => 'btn-store btn-store-primary',
+                'btn_style' => 'padding: 9px 20px;',
+                'radius' => '8px',
+                'total_products' => $totalProducts,
+                'showing_from' => $showingFrom,
+                'showing_to' => $showingTo,
+                'btn_label' => 'Filtrar',
+            ]) ?>
         </div>
     </div>
 </section>
@@ -74,7 +78,7 @@ ob_start(); ?>
                             <?php endif; ?>
                         </div>
                         <div class="product-card-content">
-                            <div class="product-category"><?= htmlspecialchars($p['category_name'] ?? 'General') ?></div>
+                            <div class="product-category"><?= htmlspecialchars($p['category_name'] ?? 'General') ?><?php $skuShow = !empty($p['sku']) ? $p['sku'] : ($p['variant_sku_sample'] ?? ''); if ($skuShow !== ''): ?> &middot; SKU: <?= htmlspecialchars($skuShow) ?><?php endif; ?></div>
                             <a href="<?= $baseUrl ?>/product/<?= htmlspecialchars($p['slug']) ?>" class="product-title"><?= htmlspecialchars($p['name']) ?></a>
 
                             <div class="product-price-row">
@@ -93,6 +97,7 @@ ob_start(); ?>
                     </div>
                 <?php endforeach; ?>
             </div>
+            <?= CatalogHelper::renderPagination($baseUrl, $filters, $currentPage, $totalPages, ['radius' => '8px']) ?>
         <?php endif; ?>
     </div>
 </section>

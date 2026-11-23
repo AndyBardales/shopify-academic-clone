@@ -7,6 +7,8 @@ use ShopCMS\Core\PluginManager;
 use ShopCMS\Core\OrderWorkflow;
 use ShopCMS\Core\InventoryManager;
 use ShopCMS\Core\Settings;
+use ShopCMS\Core\ThemeCustomizer;
+use ShopCMS\Core\CatalogHelper;
 
 class StoreController {
 
@@ -102,36 +104,27 @@ class StoreController {
     }
 
     public function catalog(): void {
-        $catSlug = $_GET['category'] ?? '';
-        $search = trim($_GET['q'] ?? '');
+        $themeSlug = ThemeManager::getActiveTheme();
+        $themeCfg = ThemeCustomizer::getConfig($themeSlug);
+        $defaultPerPage = (int)($themeCfg['templates']['catalog']['sections']['catalog_grid']['per_page'] ?? 12);
 
-        $sql = "SELECT p.*, c.name as category_name 
-                FROM " . Database::table('products') . " p
-                LEFT JOIN " . Database::table('categories') . " c ON p.category_id = c.id AND c.is_active = 1
-                WHERE p.is_active = 1";
-        $params = [];
-
-        if (!empty($catSlug)) {
-            $sql .= " AND c.slug = ?";
-            $params[] = $catSlug;
-        }
-
-        if (!empty($search)) {
-            $sql .= " AND (p.name LIKE ? OR p.description LIKE ?)";
-            $params[] = "%{$search}%";
-            $params[] = "%{$search}%";
-        }
-
-        $sql .= " ORDER BY p.id DESC";
-        $products = Database::fetchAll($sql, $params);
+        $catalogData = CatalogHelper::queryCatalog($_GET, $defaultPerPage);
         $categories = Database::fetchAll("SELECT * FROM " . Database::table('categories') . " WHERE is_active = 1 ORDER BY name ASC");
 
         ThemeManager::render('catalog', [
-            'products' => $products,
-            'categories' => $categories,
-            'activeCategory' => $catSlug,
-            'search' => $search,
-            'currency' => $this->getCurrency()
+            'products'       => $catalogData['products'],
+            'categories'     => $categories,
+            'activeCategory' => $catalogData['filters']['category'],
+            'search'         => $catalogData['filters']['q'],
+            'filters'        => $catalogData['filters'],
+            'totalProducts'  => $catalogData['totalProducts'],
+            'totalPages'     => $catalogData['totalPages'],
+            'currentPage'    => $catalogData['currentPage'],
+            'perPage'        => $catalogData['perPage'],
+            'showingFrom'    => $catalogData['showingFrom'],
+            'showingTo'      => $catalogData['showingTo'],
+            'priceBounds'    => $catalogData['priceBounds'],
+            'currency'       => $this->getCurrency(),
         ]);
     }
 

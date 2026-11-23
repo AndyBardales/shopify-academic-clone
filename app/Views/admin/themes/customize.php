@@ -1233,6 +1233,12 @@ function renderInspector(focusGlobalPart) {
             { value: 2, label: '2 columnas' }
         ], v => sec.columns_mobile = parseInt(v, 10)));
         if ('max_items' in sec) body.appendChild(makeRangeCtrl('Máximo de Productos', sec.max_items, 2, 16, ' u.', v => sec.max_items = v));
+        if ('per_page' in sec) body.appendChild(makeRangeCtrl('Productos por Página', sec.per_page, 4, 48, ' u.', v => sec.per_page = v));
+        if ('show_search' in sec) body.appendChild(makeSwitchCtrl('Buscador por nombre / SKU', sec.show_search !== false, v => sec.show_search = v));
+        if ('show_categories' in sec) body.appendChild(makeSwitchCtrl('Filtro de Categoría', sec.show_categories !== false, v => sec.show_categories = v));
+        if ('show_price_filter' in sec) body.appendChild(makeSwitchCtrl('Rango de Precio (Mín / Máx)', sec.show_price_filter !== false, v => sec.show_price_filter = v));
+        if ('show_sort' in sec) body.appendChild(makeSwitchCtrl('Selector de Ordenamiento', sec.show_sort !== false, v => sec.show_sort = v));
+        if ('show_stock_filter' in sec) body.appendChild(makeSwitchCtrl('Filtro "Solo disponibles"', sec.show_stock_filter !== false, v => sec.show_stock_filter = v));
         if (selectedSectionId === 'categories') {
             const curMode = sec.display_mode || 'top_popular';
             body.appendChild(makeSelectCtrl('Modo de Visualización', curMode, [
