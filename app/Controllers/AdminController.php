@@ -2301,8 +2301,8 @@ class AdminController {
             $hasPaymentPlugin = !empty($pg);
         } catch (Exception $e) {}
 
-        if (($toSave['enable_payment_cod'] ?? '1') === '0'
-            && ($toSave['enable_payment_bank'] ?? '1') === '0'
+        if (($toSave['enable_payment_cod'] ?? '0') === '0'
+            && ($toSave['enable_payment_bank'] ?? '0') === '0'
             && !$hasPaymentPlugin) {
             $toSave['enable_payment_cod'] = '1';
             $notice = ' Se mantuvo activo Pago Contra Entrega porque no hay otra pasarela habilitada.';

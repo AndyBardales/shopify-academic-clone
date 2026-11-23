@@ -537,7 +537,7 @@ $hasPaymentPlugin = $hasPaymentPlugin ?? false;
                                 <div class="switch-row-desc">Permite que el cliente pague al recibir el pedido en su dirección.</div>
                             </div>
                             <label class="polaris-switch">
-                                <input type="checkbox" name="enable_payment_cod" value="1" <?= ($settings['enable_payment_cod'] ?? '1') === '1' ? 'checked' : '' ?>>
+                                <input type="checkbox" name="enable_payment_cod" value="1" <?= ($settings['enable_payment_cod'] ?? '0') === '1' ? 'checked' : '' ?>>
                                 <span class="polaris-slider"></span>
                             </label>
                         </div>
@@ -548,7 +548,7 @@ $hasPaymentPlugin = $hasPaymentPlugin ?? false;
                                 <div class="switch-row-desc">Habilita pago por depósito o billetera móvil mostrando tus instrucciones abajo.</div>
                             </div>
                             <label class="polaris-switch">
-                                <input type="checkbox" name="enable_payment_bank" value="1" <?= ($settings['enable_payment_bank'] ?? '1') === '1' ? 'checked' : '' ?>>
+                                <input type="checkbox" name="enable_payment_bank" value="1" <?= ($settings['enable_payment_bank'] ?? '0') === '1' ? 'checked' : '' ?>>
                                 <span class="polaris-slider"></span>
                             </label>
                         </div>

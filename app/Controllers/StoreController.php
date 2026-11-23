@@ -686,8 +686,8 @@ class StoreController {
             $hasPaymentPlugin = !empty($pg);
         } catch (\Throwable $e) {}
 
-        $enableCod = Settings::getBool('enable_payment_cod', true);
-        $enableBank = Settings::getBool('enable_payment_bank', true);
+        $enableCod = Settings::getBool('enable_payment_cod', false);
+        $enableBank = Settings::getBool('enable_payment_bank', false);
         if (!$enableCod && !$enableBank && !$hasPaymentPlugin) {
             $enableCod = true;
         }
@@ -766,10 +766,18 @@ class StoreController {
         $total = $totals['total'];
 
         // Verificar que el método de pago elegido siga habilitado
-        if ($paymentMethod === 'cod' && !Settings::getBool('enable_payment_cod', true)) {
-            $paymentMethod = Settings::getBool('enable_payment_bank', true) ? 'bank_transfer' : 'cod';
-        } elseif ($paymentMethod === 'bank_transfer' && !Settings::getBool('enable_payment_bank', true)) {
-            $paymentMethod = Settings::getBool('enable_payment_cod', true) ? 'cod' : 'bank_transfer';
+        $hasPaymentPlugin = false;
+        try {
+            $pg = Database::fetch("SELECT id FROM " . Database::table('plugins') . " WHERE slug = 'payment-gateway' AND is_active = 1");
+            $hasPaymentPlugin = !empty($pg);
+        } catch (\Throwable $e) {}
+
+        $allowCod = Settings::getBool('enable_payment_cod', false);
+        $allowBank = Settings::getBool('enable_payment_bank', false);
+        if ($paymentMethod === 'cod' && !$allowCod) {
+            $paymentMethod = $allowBank ? 'bank_transfer' : ($hasPaymentPlugin ? 'culqi_card' : 'cod');
+        } elseif ($paymentMethod === 'bank_transfer' && !$allowBank) {
+            $paymentMethod = $allowCod ? 'cod' : ($hasPaymentPlugin ? 'culqi_card' : 'bank_transfer');
         }
 
         OrderWorkflow::ensurePaymentProofSchema();

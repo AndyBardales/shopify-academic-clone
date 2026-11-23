@@ -21,10 +21,11 @@ PluginManager::addAction('checkout_payment_methods', function () {
                 </svg>
                 <strong style="color: #008060;">Tarjeta de Crédito / Débito (Culqi)</strong>
                 <span style="font-size: 10.5px; font-weight: 700; background: #DCFCE7; color: #166534; padding: 2px 7px; border-radius: 4px;">Confirmación inmediata</span>
+                <span style="font-size: 10.5px; font-weight: 600; background: #F3F4F6; color: #4B5563; border: 1px solid #E5E7EB; padding: 1px 6px; border-radius: 4px;">Modo demo / sin cobro real</span>
             </div>
             <p style="font-size: 12px; color: #6D7175; margin-top: 3px;">Acepta Visa, Mastercard, Diners y Amex de forma segura con validación en línea.</p>
             <div id="pg-culqi-box" style="display: none; margin-top: 10px; padding: 10px 12px; background: #FFFFFF; border: 1px solid #A7F3D0; border-radius: 6px; font-size: 12px; color: #065F46;">
-                Al confirmar el pedido se procesará el cargo seguro mediante token Culqi y tu orden pasará automáticamente a estado <strong>Confirmado / Pagado</strong>.
+                Simulación académica activa (no realiza cobros reales ni solicita datos bancarios): al confirmar el pedido se generará un código de autorización y tu orden pasará automáticamente a estado <strong>Confirmado / Pagado</strong>.
             </div>
         </div>
     </label>
@@ -40,10 +41,11 @@ PluginManager::addAction('checkout_payment_methods', function () {
                 </svg>
                 <strong style="color: #006FAD;">PayPal Express Checkout</strong>
                 <span style="font-size: 10.5px; font-weight: 700; background: #DBEAFE; color: #1E40AF; padding: 2px 7px; border-radius: 4px;">Confirmación inmediata</span>
+                <span style="font-size: 10.5px; font-weight: 600; background: #F3F4F6; color: #4B5563; border: 1px solid #E5E7EB; padding: 1px 6px; border-radius: 4px;">Modo demo / sin cobro real</span>
             </div>
             <p style="font-size: 12px; color: #6D7175; margin-top: 3px;">Paga con saldo de cuenta PayPal o tarjeta internacional protegida.</p>
             <div id="pg-paypal-box" style="display: none; margin-top: 10px; padding: 10px 12px; background: #FFFFFF; border: 1px solid #BFDBFE; border-radius: 6px; font-size: 12px; color: #1E3A8A;">
-                Autorización PayPal Express habilitada: al confirmar tu compra se validará el pago al instante.
+                Simulación académica activa (sin cobro real): al confirmar tu compra se generará la autorización simulada PayPal al instante.
             </div>
         </div>
     </label>
