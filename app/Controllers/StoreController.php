@@ -495,6 +495,7 @@ class StoreController {
     // CHECKOUT Y PROCESO DE COMPRA
     // ==========================================
     public function checkout(): void {
+        \ShopCMS\Core\Auth::ensureIsolatedCartSession();
         $cart = $_SESSION['cart'] ?? [];
         if (empty($cart)) {
             header('Location: ' . (defined('APP_URL') ? APP_URL : '') . '/cart');
@@ -558,6 +559,7 @@ class StoreController {
     }
 
     public function processOrder(): void {
+        \ShopCMS\Core\Auth::ensureIsolatedCartSession();
         $cart = $_SESSION['cart'] ?? [];
         if (empty($cart)) {
             header('Location: ' . (defined('APP_URL') ? APP_URL : '') . '/catalog');
