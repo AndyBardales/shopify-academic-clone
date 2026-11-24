@@ -322,7 +322,7 @@ class StoreController {
         if ($redirect === 'checkout') return '/checkout';
         if ($redirect === 'cart') return '/cart';
         if ($redirect === 'catalog') return '/catalog';
-        if ($redirect !== '' && str_starts_with($redirect, '/') && !str_starts_with($redirect, '//') && !str_contains($redirect, '://')) {
+        if ($redirect !== '' && str_starts_with($redirect, '/') && !str_starts_with($redirect, '//') && !str_contains($redirect, '\\') && !str_contains($redirect, '://')) {
             return $redirect;
         }
         return '/account';
@@ -808,23 +808,36 @@ class StoreController {
         try {
             $pdo->beginTransaction();
 
-            // 1. Verificar disponibilidad real y reservar stock con bloqueo de fila (FOR UPDATE)
-            foreach ($cart as $item) {
+            // 1. Verificar disponibilidad real, refrescar precios vivos en BD y reservar stock con bloqueo (FOR UPDATE)
+            $liveSubtotal = 0.0;
+            foreach ($cart as $cartKey => &$item) {
                 $reqQty = max(1, (int)$item['quantity']);
-                $prod = Database::fetch("SELECT id, name, track_quantity, quantity FROM " . Database::table('products') . " WHERE id = ? FOR UPDATE", [(int)$item['product_id']]);
+                $prod = Database::fetch("SELECT id, name, price, track_quantity, quantity FROM " . Database::table('products') . " WHERE id = ? AND is_active = 1 FOR UPDATE", [(int)$item['product_id']]);
                 if (!$prod) {
                     throw new \RuntimeException("El producto '{$item['name']}' ya no está disponible.");
                 }
+                $unitPrice = (float)$prod['price'];
                 if (!empty($item['variant_id'])) {
-                    $var = Database::fetch("SELECT id, quantity FROM " . Database::table('product_variants') . " WHERE id = ? FOR UPDATE", [(int)$item['variant_id']]);
+                    $var = Database::fetch("SELECT id, price, quantity FROM " . Database::table('product_variants') . " WHERE id = ? AND product_id = ? FOR UPDATE", [(int)$item['variant_id'], (int)$prod['id']]);
                     if (!$var || (!$allowBackorder && !empty($prod['track_quantity']) && (int)$var['quantity'] < $reqQty)) {
                         $disp = $var ? (int)$var['quantity'] : 0;
                         throw new \RuntimeException("Stock insuficiente para '{$item['name']}'. Disponible: {$disp}.");
                     }
+                    $unitPrice = (float)$var['price'];
                 } elseif (!$allowBackorder && !empty($prod['track_quantity']) && (int)$prod['quantity'] < $reqQty) {
                     throw new \RuntimeException("Stock insuficiente para '{$item['name']}'. Disponible: " . (int)$prod['quantity'] . ".");
                 }
+                $item['price'] = $unitPrice;
+                $liveSubtotal += $unitPrice * $reqQty;
             }
+            unset($item);
+
+            $subtotal = $liveSubtotal;
+            $discount = $this->recalculateCartCoupon((float)$subtotal, [$customerEmail]);
+            $totals = Settings::calculateCheckoutTotals((float)$subtotal, (float)$discount);
+            $shippingAmount = $totals['shipping_amount'];
+            $taxAmount = $totals['tax_amount'];
+            $total = $totals['total'];
 
             // 2. Guardar orden vinculada al cliente
             $orderId = Database::insert('orders', [
@@ -927,14 +940,16 @@ class StoreController {
         $customer = $this->requireCustomer("Inicia sesión para ver el comprobante de tu pedido.", "/order/success/" . ltrim($orderNumber, '#'));
         $clean = ltrim($orderNumber, '#');
         $order = Database::fetch("SELECT * FROM " . Database::table('orders') . " WHERE order_number = ? OR order_number = ?", [$clean, '#' . $clean]);
-        if (!$order) {
-            header('Location: ' . (defined('APP_URL') ? APP_URL : '') . '/account');
-            exit;
-        }
-        $sameOwner = ((int)($order['customer_id'] ?? 0) === (int)$customer['id'])
-            || (strtolower(trim((string)($order['customer_email'] ?? ''))) === strtolower(trim((string)$customer['email'])));
-        if (!$sameOwner && !\ShopCMS\Core\Auth::isAdmin()) {
-            $_SESSION['flash_error'] = "No tienes permiso para acceder a este pedido.";
+        $sameOwner = $order && (
+            ((int)($order['customer_id'] ?? 0) === (int)$customer['id'])
+            || (strtolower(trim((string)($order['customer_email'] ?? ''))) === strtolower(trim((string)$customer['email'])))
+        );
+        if (!$order || (!$sameOwner && !\ShopCMS\Core\Auth::isAdmin())) {
+            if ($order) {
+                \ShopCMS\Core\Security::auditLog('idor_order_denied', ['customer_id' => (int)$customer['id']]);
+            }
+            http_response_code(404);
+            $_SESSION['flash_error'] = "No se encontró el pedido solicitado.";
             header('Location: ' . (defined('APP_URL') ? APP_URL : '') . '/account');
             exit;
         }
@@ -1367,16 +1382,16 @@ class StoreController {
         $clean = ltrim($orderNumber, '#');
         $customer = $this->requireCustomer("Inicia sesión para descargar el comprobante de tu pedido.", "/order/receipt/" . $clean);
         $order = Database::fetch("SELECT * FROM " . Database::table('orders') . " WHERE order_number = ? OR order_number = ?", [$clean, '#' . $clean]);
-        if (!$order) {
+        $sameOwner = $order && (
+            ((int)($order['customer_id'] ?? 0) === (int)$customer['id'])
+            || (strtolower(trim((string)($order['customer_email'] ?? ''))) === strtolower(trim((string)$customer['email'])))
+        );
+        if (!$order || (!$sameOwner && !\ShopCMS\Core\Auth::isAdmin())) {
+            if ($order) {
+                \ShopCMS\Core\Security::auditLog('idor_receipt_denied', ['customer_id' => (int)$customer['id']]);
+            }
+            http_response_code(404);
             $_SESSION['flash_error'] = "No se encontró el pedido solicitado.";
-            header('Location: ' . (defined('APP_URL') ? APP_URL : '') . '/account');
-            exit;
-        }
-
-        $sameOwner = ((int)($order['customer_id'] ?? 0) === (int)$customer['id'])
-            || (strtolower(trim((string)($order['customer_email'] ?? ''))) === strtolower(trim((string)$customer['email'])));
-        if (!$sameOwner && !\ShopCMS\Core\Auth::isAdmin()) {
-            $_SESSION['flash_error'] = "No tienes permiso para acceder a este comprobante.";
             header('Location: ' . (defined('APP_URL') ? APP_URL : '') . '/account');
             exit;
         }
@@ -1993,11 +2008,13 @@ class StoreController {
         }
 
         $user = Database::fetch(
-            "SELECT id, name, email, is_active FROM " . Database::table('users') . " WHERE LOWER(email) = ? LIMIT 1",
+            "SELECT id, name, email, role, is_active FROM " . Database::table('users') . " WHERE LOWER(email) = ? LIMIT 1",
             [$email]
         );
 
-        if ($user && (!isset($user['is_active']) || (int)$user['is_active'] === 1)) {
+        \ShopCMS\Core\Security::auditLog('password_reset_requested', ['email_hash' => substr(sha1($email), 0, 12)]);
+
+        if ($user && (!isset($user['is_active']) || (int)$user['is_active'] === 1) && (($user['role'] ?? 'customer') === 'customer')) {
             $token = bin2hex(random_bytes(32));
             $tokenHash = hash('sha256', $token);
             $expiresAt = date('Y-m-d H:i:s', time() + 1800);
@@ -2016,16 +2033,15 @@ class StoreController {
             $fullUrl = str_starts_with($resetPath, 'http') ? $resetPath : ($scheme . '://' . $host . $resetPath);
 
             $storeTitle = Settings::get('store_name', 'ShopCMS');
-            $mailSent = @mail(
+            @mail(
                 $user['email'],
                 "Restablecer contraseña - {$storeTitle}",
                 "Hola {$user['name']},\n\nSolicitaste restablecer tu contraseña. Usa el siguiente enlace (válido por 30 minutos):\n{$fullUrl}\n\nSi no solicitaste este cambio, ignora este mensaje."
             );
 
-            $isLocalDev = (defined('APP_ENV') && APP_ENV === 'development')
-                || str_contains(strtolower((string)$host), 'localhost')
-                || str_contains((string)$host, '127.0.0.1');
-            if (!$mailSent || $isLocalDev) {
+            $isLocalHost = in_array(strtolower((string)parse_url('http://' . $host, PHP_URL_HOST)), ['localhost', '127.0.0.1'], true);
+            $isLocalDev = (defined('APP_ENV') && APP_ENV === 'development') && $isLocalHost;
+            if ($isLocalDev) {
                 $_SESSION['forgot_dev_link'] = $resetPath;
             }
         }

@@ -1,5 +1,28 @@
+Options -Indexes
+
+<IfModule mod_headers.c>
+    Header always set X-Content-Type-Options "nosniff"
+    Header always set X-Frame-Options "SAMEORIGIN"
+    Header always set Referrer-Policy "strict-origin-when-cross-origin"
+    Header always set Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=()"
+</IfModule>
+
+# Bloquear acceso directo a archivos sensibles, SQL, logs y configuración
+<FilesMatch "(^config\.php$|\.(sql|log|ini|bak|env|sh)$)">
+    <IfModule mod_authz_core.c>
+        Require all denied
+    </IfModule>
+    <IfModule !mod_authz_core.c>
+        Order allow,deny
+        Deny from all
+    </IfModule>
+</FilesMatch>
+
 <IfModule mod_rewrite.c>
     RewriteEngine On
+
+    # Bloquear acceso web a directorios internos sensibles
+    RewriteRule ^(storage|\.git)(/|$) - [F,L,NC]
 
     # Servir archivos y carpetas existentes directamente
     RewriteCond %{REQUEST_FILENAME} -f [OR]

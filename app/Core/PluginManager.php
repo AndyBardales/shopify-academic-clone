@@ -198,6 +198,27 @@ class PluginManager {
         if (empty($pluginSlug)) {
             $pluginSlug = $metadata['slug'] ?? preg_replace('/[^a-z0-9_-]/', '', strtolower($metadata['name']));
         }
+        $pluginSlug = strtolower(trim((string)$pluginSlug));
+        if (!preg_match('/^[a-z0-9][a-z0-9_-]{0,63}$/', $pluginSlug)) {
+            $zip->close();
+            throw new Exception("El identificador (slug) del plugin contiene caracteres inválidos.");
+        }
+
+        // Validación anti-Zip-Slip: comprobar todas las rutas antes de extraer
+        for ($i = 0; $i < $zip->numFiles; $i++) {
+            $entry = str_replace('\\', '/', (string)$zip->getNameIndex($i));
+            if ($entry === '' || str_contains($entry, "\0") || str_starts_with($entry, '/') || preg_match('/^[a-zA-Z]:/', $entry) || preg_match('#(^|/)\.\.(/|$)#', $entry)) {
+                $zip->close();
+                throw new Exception("El archivo ZIP contiene rutas no seguras y fue rechazado por seguridad.");
+            }
+            if ($hasSubfolder) {
+                $topSeg = explode('/', ltrim($entry, '/'))[0] ?? '';
+                if ($topSeg !== '' && $topSeg !== $pluginSlug) {
+                    $zip->close();
+                    throw new Exception("El archivo ZIP intenta extraer archivos fuera de la carpeta del plugin '{$pluginSlug}'.");
+                }
+            }
+        }
 
         $pluginsBaseDir = dirname(__DIR__, 2) . '/plugins';
         $targetDir = $pluginsBaseDir . '/' . $pluginSlug;
@@ -206,7 +227,7 @@ class PluginManager {
             mkdir($targetDir, 0755, true);
         }
 
-        // Extraer archivos al destino correcto
+        // Extraer archivos validados al destino correcto
         if ($hasSubfolder) {
             $zip->extractTo($pluginsBaseDir);
         } else {

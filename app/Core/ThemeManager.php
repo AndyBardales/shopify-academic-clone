@@ -155,6 +155,27 @@ class ThemeManager {
         if (empty($themeSlug)) {
             $themeSlug = $metadata['slug'] ?? preg_replace('/[^a-z0-9_-]/', '', strtolower($metadata['name']));
         }
+        $themeSlug = strtolower(trim((string)$themeSlug));
+        if (!preg_match('/^[a-z0-9][a-z0-9_-]{0,63}$/', $themeSlug)) {
+            $zip->close();
+            throw new Exception("El identificador (slug) de la plantilla contiene caracteres inválidos.");
+        }
+
+        // Validación anti-Zip-Slip: comprobar todas las rutas antes de extraer
+        for ($i = 0; $i < $zip->numFiles; $i++) {
+            $entry = str_replace('\\', '/', (string)$zip->getNameIndex($i));
+            if ($entry === '' || str_contains($entry, "\0") || str_starts_with($entry, '/') || preg_match('/^[a-zA-Z]:/', $entry) || preg_match('#(^|/)\.\.(/|$)#', $entry)) {
+                $zip->close();
+                throw new Exception("El archivo ZIP contiene rutas no seguras y fue rechazado por seguridad.");
+            }
+            if ($hasSubfolder) {
+                $topSeg = explode('/', ltrim($entry, '/'))[0] ?? '';
+                if ($topSeg !== '' && $topSeg !== $themeSlug) {
+                    $zip->close();
+                    throw new Exception("El archivo ZIP intenta extraer archivos fuera de la carpeta del tema '{$themeSlug}'.");
+                }
+            }
+        }
 
         $themesBaseDir = dirname(__DIR__, 2) . '/themes';
         $targetDir = $themesBaseDir . '/' . $themeSlug;
@@ -163,7 +184,7 @@ class ThemeManager {
             mkdir($targetDir, 0755, true);
         }
 
-        // Extraer archivos
+        // Extraer archivos validados
         if ($hasSubfolder) {
             $zip->extractTo($themesBaseDir);
         } else {

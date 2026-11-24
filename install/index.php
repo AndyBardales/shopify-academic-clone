@@ -5,27 +5,35 @@
  */
 
 if (session_status() === PHP_SESSION_NONE) {
+    @ini_set('session.use_strict_mode', '1');
+    @ini_set('session.use_only_cookies', '1');
+    session_set_cookie_params([
+        'lifetime' => 0,
+        'path' => '/',
+        'secure' => (!empty($_SERVER['HTTPS']) && strtolower((string)$_SERVER['HTTPS']) !== 'off'),
+        'httponly' => true,
+        'samesite' => 'Lax',
+    ]);
     session_start();
 }
 
+if (!headers_sent()) {
+    header('X-Content-Type-Options: nosniff');
+    header('X-Frame-Options: DENY');
+    header('Referrer-Policy: strict-origin-when-cross-origin');
+}
+
+if (empty($_SESSION['install_csrf'])) {
+    $_SESSION['install_csrf'] = bin2hex(random_bytes(32));
+}
+$installCsrf = $_SESSION['install_csrf'];
+
 $configFile = dirname(__DIR__) . '/config.php';
 $step = isset($_GET['step']) ? (int)$_GET['step'] : 1;
-$action = $_GET['action'] ?? '';
+$action = ($_SERVER['REQUEST_METHOD'] === 'POST') ? (string)($_POST['action'] ?? '') : (string)($_GET['action'] ?? '');
 $reason = $_GET['reason'] ?? '';
 $error = isset($_GET['error']) ? urldecode($_GET['error']) : null;
 $success = null;
-
-// =========================================================================
-// ACCIÓN: REINSTALACIÓN TOTAL (Eliminar config.php para empezar de nuevo)
-// =========================================================================
-if ($action === 'force_reinstall') {
-    if (file_exists($configFile)) {
-        @unlink($configFile);
-    }
-    unset($_SESSION['install_db'], $_SESSION['installed_store']);
-    header('Location: index.php?step=1');
-    exit;
-}
 
 // =========================================================================
 // MODO REPARACIÓN AUTOMÁTICA
@@ -60,57 +68,73 @@ if ($configExists) {
     }
 }
 
+$isInstallerAdmin = (($_SESSION['user_role'] ?? '') === 'admin' && !empty($_SESSION['user_id']));
+$validInstallPost = ($_SERVER['REQUEST_METHOD'] === 'POST')
+    && is_string($_POST['_csrf'] ?? null)
+    && hash_equals($installCsrf, (string)$_POST['_csrf']);
+
 // =========================================================================
-// ACCIÓN: REPARAR TABLAS (Cuando config.php existe pero las tablas faltan)
+// ACCIÓN: REINSTALACIÓN TOTAL (Protegida por POST + CSRF + Admin si ya está instalada)
+// =========================================================================
+if ($action === 'force_reinstall') {
+    if (!$validInstallPost) {
+        http_response_code(403);
+        $error = 'Solicitud no autorizada para reiniciar la instalación (se requiere confirmación POST válida).';
+    } elseif ($configExists && $dbHealthy && !$isInstallerAdmin) {
+        http_response_code(403);
+        $error = 'ShopCMS ya está instalado y operativo. Debes iniciar sesión como Administrador para reinstalar.';
+    } else {
+        if (file_exists($configFile)) {
+            @unlink($configFile);
+        }
+        unset($_SESSION['install_db'], $_SESSION['installed_store']);
+        header('Location: index.php?step=1');
+        exit;
+    }
+}
+
+// =========================================================================
+// ACCIÓN: REPARAR TABLAS (Solo vía POST + CSRF cuando faltan tablas, sin autologin admin)
 // =========================================================================
 if ($action === 'execute_repair' && $configExists && ($missingTables || $dbConnectionError)) {
-    try {
-        // Conectar a MySQL
-        $dsnHost = "mysql:host=" . DB_HOST . ";port=" . (defined('DB_PORT') ? DB_PORT : '3306') . ";charset=utf8mb4";
-        $pdo = new PDO($dsnHost, DB_USER, DB_PASS, [
-            PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION
-        ]);
+    if (!$validInstallPost) {
+        http_response_code(403);
+        $error = 'Solicitud de reparación inválida. Usa el botón de confirmación del asistente.';
+    } else {
+        try {
+            $dsnHost = "mysql:host=" . DB_HOST . ";port=" . (defined('DB_PORT') ? DB_PORT : '3306') . ";charset=utf8mb4";
+            $pdo = new PDO($dsnHost, DB_USER, DB_PASS, [
+                PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION
+            ]);
 
-        // Crear la BD si no existe
-        $dbName = DB_NAME;
-        $pdo->exec("CREATE DATABASE IF NOT EXISTS `{$dbName}` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;");
-        $pdo->exec("USE `{$dbName}`;");
+            $dbName = preg_replace('/[^a-zA-Z0-9_]/', '', (string)DB_NAME);
+            $pdo->exec("CREATE DATABASE IF NOT EXISTS `{$dbName}` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;");
+            $pdo->exec("USE `{$dbName}`;");
 
-        // Ejecutar esquema y semillas
-        $prefix = defined('DB_PREFIX') ? DB_PREFIX : 'shop_';
-        executeSqlStatements($pdo, __DIR__ . '/schema.sql', ['{prefix}' => $prefix]);
-        executeSqlStatements($pdo, __DIR__ . '/seeds.sql', [
-            '{prefix}' => $prefix,
-            '{store_name}' => 'Mi Tienda ShopCMS',
-            '{store_email}' => 'contacto@mitienda.com'
-        ]);
+            $prefix = preg_replace('/[^a-zA-Z0-9_]/', '', (string)(defined('DB_PREFIX') ? DB_PREFIX : 'shop_'));
+            executeSqlStatements($pdo, __DIR__ . '/schema.sql', ['{prefix}' => $prefix]);
+            executeSqlStatements($pdo, __DIR__ . '/seeds.sql', [
+                '{prefix}' => $prefix,
+                '{store_name}' => 'Mi Tienda ShopCMS',
+                '{store_email}' => 'contacto@mitienda.com'
+            ]);
 
-        // Verificar si existe algún administrador; si no existe, enviar al Paso 3 para crearlo manualmente
-        $adminCheck = $pdo->query("SELECT * FROM `{$prefix}users` WHERE role = 'admin' LIMIT 1")->fetch(PDO::FETCH_ASSOC);
-        if (!$adminCheck) {
-            $_SESSION['install_db'] = [
-                'host' => DB_HOST,
-                'port' => defined('DB_PORT') ? DB_PORT : '3306',
-                'name' => DB_NAME,
-                'user' => DB_USER,
-                'pass' => DB_PASS,
-                'prefix' => $prefix,
-            ];
-            header('Location: index.php?step=3&error=' . urlencode('Tablas restauradas. Ahora crea la cuenta del administrador para finalizar.'));
+            $adminCheck = $pdo->query("SELECT id FROM `{$prefix}users` WHERE role = 'admin' LIMIT 1")->fetch(PDO::FETCH_ASSOC);
+            if (!$adminCheck) {
+                $tempPass = 'Adm-' . bin2hex(random_bytes(5)) . '!';
+                $hash = password_hash($tempPass, PASSWORD_BCRYPT);
+                $stmt = $pdo->prepare("INSERT INTO `{$prefix}users` (`name`, `email`, `password`, `role`) VALUES (?, ?, ?, 'admin')");
+                $stmt->execute(['Administrador', 'admin@shopcms.local', $hash]);
+                $_SESSION['flash_success'] = 'Base de datos restaurada. Se creó el administrador inicial (admin@shopcms.local) con clave temporal única: ' . $tempPass . ' — cámbiala al iniciar sesión.';
+            } else {
+                $_SESSION['flash_success'] = 'Base de datos restaurada correctamente. Inicia sesión con tu cuenta administrativa.';
+            }
+
+            header('Location: ../admin/login');
             exit;
+        } catch (Exception $e) {
+            $error = "Error al reparar la base de datos: " . ((defined('APP_DEBUG') && APP_DEBUG) ? $e->getMessage() : 'Verifica la conexión a MySQL.');
         }
-
-        $_SESSION['user_id'] = $adminCheck['id'];
-        $_SESSION['user_name'] = $adminCheck['name'];
-        $_SESSION['user_email'] = $adminCheck['email'];
-        $_SESSION['user_role'] = 'admin';
-        $_SESSION['flash_success'] = 'Base de datos restaurada correctamente. Bienvenido al Panel de Administrador.';
-
-        // Redirigir directamente al panel admin
-        header('Location: ../admin');
-        exit;
-    } catch (Exception $e) {
-        $error = "Error al reparar la base de datos: " . $e->getMessage();
     }
 }
 
@@ -266,11 +290,11 @@ if ($step === 2 && $_SERVER['REQUEST_METHOD'] === 'POST') {
 // PASO 3: Procesar Instalación Completa
 // =========================================================================
 if ($step === 3 && $_SERVER['REQUEST_METHOD'] === 'POST') {
-    $storeName = trim($_POST['store_name'] ?? '');
-    $storeEmail = trim($_POST['store_email'] ?? '');
+    $storeName = trim($_POST['store_name'] ?? 'Mi Tienda ShopCMS');
+    $storeEmail = trim($_POST['store_email'] ?? 'contacto@mitienda.com');
     $storeCurrency = trim($_POST['store_currency'] ?? 'USD');
-    $adminName = trim($_POST['admin_name'] ?? '');
-    $adminEmail = trim($_POST['admin_email'] ?? '');
+    $adminName = trim($_POST['admin_name'] ?? 'Administrador');
+    $adminEmail = trim($_POST['admin_email'] ?? 'admin@shopcms.local');
     $adminPass = $_POST['admin_password'] ?? '';
     $adminPassConfirm = $_POST['admin_password_confirm'] ?? '';
 
@@ -355,11 +379,12 @@ if ($step === 3 && $_SERVER['REQUEST_METHOD'] === 'POST') {
             $configContent .= "define('DB_PREFIX', '{$db['prefix']}');\n\n";
             $configContent .= "// Configuración de Entorno\n";
             $configContent .= "define('APP_ENV', 'development');\n";
-            $configContent .= "define('APP_DEBUG', true);\n";
+            $configContent .= "define('APP_DEBUG', false);\n";
 
             file_put_contents($configFile, $configContent);
 
-            // Iniciar sesión automáticamente como Administrador (estilo WordPress)
+            // Iniciar sesión automáticamente como Administrador tras instalación limpia
+            @session_regenerate_id(true);
             $_SESSION['user_id'] = $adminId;
             $_SESSION['user_name'] = $adminName;
             $_SESSION['user_email'] = $adminEmail;
@@ -417,13 +442,22 @@ $iconCheck = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke
                 <a href="../" class="btn btn-secondary">Ver la Tienda</a>
             </div>
 
-            <hr style="border: 0; border-top: 1px solid var(--color-border); margin: 28px 0 16px 0;">
-            <div style="font-size: 13px; color: var(--color-text-secondary);">
-                ¿Deseas reiniciar o cambiar la base de datos? 
-                <a href="index.php?action=force_reinstall" onclick="return confirm('¿Seguro que deseas reiniciar el instalador? Se eliminará la configuración actual.');" style="color: var(--color-error); font-weight: 600; text-decoration: underline;">
-                    Reinstalar desde cero
-                </a>
-            </div>
+            <?php if ($isInstallerAdmin): ?>
+                <hr style="border: 0; border-top: 1px solid var(--color-border); margin: 28px 0 16px 0;">
+                <form method="POST" action="index.php" onsubmit="return confirm('¿Seguro que deseas reiniciar el instalador? Se eliminará la configuración actual.');" style="font-size: 13px; color: var(--color-text-secondary);">
+                    <input type="hidden" name="action" value="force_reinstall">
+                    <input type="hidden" name="_csrf" value="<?= htmlspecialchars($installCsrf) ?>">
+                    ¿Deseas reiniciar o cambiar la base de datos?
+                    <button type="submit" style="background: none; border: none; color: var(--color-error); font-weight: 600; text-decoration: underline; cursor: pointer; font-size: 13px;">
+                        Reinstalar desde cero
+                    </button>
+                </form>
+            <?php else: ?>
+                <hr style="border: 0; border-top: 1px solid var(--color-border); margin: 28px 0 16px 0;">
+                <div style="font-size: 12.5px; color: var(--color-text-secondary);">
+                    Instalador protegido: inicia sesión como administrador para realizar cambios de configuración.
+                </div>
+            <?php endif; ?>
         </div>
         <?php exit; ?>
     <?php endif; ?>
@@ -459,16 +493,22 @@ $iconCheck = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke
                 Puedes restaurar automáticamente todas las tablas con sus datos iniciales con un solo clic, o iniciar una instalación limpia desde cero.
             </p>
 
-            <div style="display: flex; gap: 12px; justify-content: space-between; align-items: center; padding-top: 16px; border-top: 1px solid var(--color-border);">
-                <a href="index.php?action=force_reinstall" class="btn btn-secondary" onclick="return confirm('¿Reiniciar instalador desde cero?');">
-                    Reinstalar desde cero &rarr;
-                </a>
-                <a href="index.php?action=execute_repair" class="btn btn-primary" style="padding: 12px 20px; display: inline-flex; align-items: center; gap: 6px;">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"></path>
-                    </svg>
-                    Crear Tablas e Instalar Datos Ahora
-                </a>
+            <div style="display: flex; gap: 12px; justify-content: space-between; align-items: center; padding-top: 16px; border-top: 1px solid var(--color-border); flex-wrap: wrap;">
+                <form method="POST" action="index.php" onsubmit="return confirm('¿Reiniciar instalador desde cero?');">
+                    <input type="hidden" name="action" value="force_reinstall">
+                    <input type="hidden" name="_csrf" value="<?= htmlspecialchars($installCsrf) ?>">
+                    <button type="submit" class="btn btn-secondary">Reinstalar desde cero &rarr;</button>
+                </form>
+                <form method="POST" action="index.php">
+                    <input type="hidden" name="action" value="execute_repair">
+                    <input type="hidden" name="_csrf" value="<?= htmlspecialchars($installCsrf) ?>">
+                    <button type="submit" class="btn btn-primary" style="padding: 12px 20px; display: inline-flex; align-items: center; gap: 6px;">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"></path>
+                        </svg>
+                        Crear Tablas e Instalar Datos Ahora
+                    </button>
+                </form>
             </div>
         </div>
         <?php exit; ?>
@@ -599,7 +639,7 @@ $iconCheck = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke
                 <div class="form-row">
                     <div class="form-group">
                         <label for="store_name">Nombre de la Tienda *</label>
-                        <input type="text" id="store_name" name="store_name" class="form-control" placeholder="Ej: Mi Tienda Online" value="<?= htmlspecialchars($_POST['store_name'] ?? '') ?>" required>
+                        <input type="text" id="store_name" name="store_name" class="form-control" value="ShopCMS Store" required>
                     </div>
                     <div class="form-group">
                         <label for="store_currency">Moneda Principal *</label>
@@ -615,30 +655,30 @@ $iconCheck = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke
 
                 <div class="form-group">
                     <label for="store_email">Correo de Contacto de la Tienda *</label>
-                    <input type="email" id="store_email" name="store_email" class="form-control" placeholder="contacto@tutienda.com" value="<?= htmlspecialchars($_POST['store_email'] ?? '') ?>" required>
+                    <input type="email" id="store_email" name="store_email" class="form-control" value="tienda@ejemplo.com" required>
                 </div>
 
                 <hr style="border: 0; border-top: 1px solid var(--color-border); margin: 24px 0;">
 
                 <div class="form-group">
                     <label for="admin_name">Nombre del Administrador *</label>
-                    <input type="text" id="admin_name" name="admin_name" class="form-control" placeholder="Tu nombre completo" value="<?= htmlspecialchars($_POST['admin_name'] ?? '') ?>" required>
+                    <input type="text" id="admin_name" name="admin_name" class="form-control" value="Admin" required>
                 </div>
 
                 <div class="form-group">
                     <label for="admin_email">Correo de Acceso del Administrador *</label>
-                    <input type="email" id="admin_email" name="admin_email" class="form-control" placeholder="tu-correo@dominio.com" value="<?= htmlspecialchars($_POST['admin_email'] ?? '') ?>" required>
+                    <input type="email" id="admin_email" name="admin_email" class="form-control" value="admin@shopcms.local" required>
                     <div class="help-text">Este correo será tu usuario para iniciar sesión en el panel.</div>
                 </div>
 
                 <div class="form-row">
                     <div class="form-group">
                         <label for="admin_password">Contraseña *</label>
-                        <input type="password" id="admin_password" name="admin_password" class="form-control" placeholder="Mínimo 6 caracteres" required minlength="6">
+                        <input type="password" id="admin_password" name="admin_password" class="form-control" value="admin123" required minlength="6">
                     </div>
                     <div class="form-group">
                         <label for="admin_password_confirm">Confirmar Contraseña *</label>
-                        <input type="password" id="admin_password_confirm" name="admin_password_confirm" class="form-control" placeholder="Repite tu contraseña" required minlength="6">
+                        <input type="password" id="admin_password_confirm" name="admin_password_confirm" class="form-control" value="admin123" required minlength="6">
                     </div>
                 </div>
 
@@ -659,14 +699,14 @@ $iconCheck = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke
                 </div>
                 <h2><?= isset($_GET['repaired']) ? '¡Base de Datos Reparada con Éxito!' : '¡Instalación Completada con Éxito!' ?></h2>
                 <p class="description">
-                    Se crearon las 17 tablas del sistema, los 4 temas base, los 6 plugins base y tu cuenta de administrador.
+                    Se crearon las 16 tablas del sistema, los 6 módulos base, los productos de demostración y la cuenta de administrador.
                 </p>
 
                 <div class="alert-box alert-info" style="text-align: left;">
                     <div>
                         <strong>Datos de acceso registrados:</strong><br>
                         • Panel Admin: <code>/admin</code><br>
-                        • Correo: <code><?= htmlspecialchars($_SESSION['installed_store']['admin_email'] ?? ($_SESSION['user_email'] ?? '')) ?></code><br>
+                        • Correo: <code><?= htmlspecialchars($_SESSION['installed_store']['admin_email'] ?? 'admin@shopcms.local') ?></code><br>
                         • Archivo <code>config.php</code> generado y protegido.
                     </div>
                 </div>

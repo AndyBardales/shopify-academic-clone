@@ -42,9 +42,29 @@ class Security {
         if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') {
             return;
         }
-        if (self::validateCsrfToken()) {
-            return;
+        if (!self::validateSameOrigin() || !self::validateCsrfToken()) {
+            self::auditLog('csrf_or_origin_rejected', ['route' => $route]);
+            self::rejectCsrf($route);
         }
+    }
+
+    public static function validateSameOrigin(): bool {
+        $origin = trim((string)($_SERVER['HTTP_ORIGIN'] ?? ''));
+        if ($origin === '' || strtolower($origin) === 'null') {
+            return true;
+        }
+        $originHost = parse_url($origin, PHP_URL_HOST);
+        $baseUrl = defined('APP_URL') ? (string)APP_URL : '';
+        $expectedHost = parse_url($baseUrl !== '' ? $baseUrl : ('http://' . ($_SERVER['HTTP_HOST'] ?? 'localhost')), PHP_URL_HOST);
+        $serverHost = parse_url('http://' . ($_SERVER['HTTP_HOST'] ?? 'localhost'), PHP_URL_HOST);
+        if ($originHost === null) {
+            return false;
+        }
+        return strcasecmp((string)$originHost, (string)$expectedHost) === 0
+            || strcasecmp((string)$originHost, (string)$serverHost) === 0;
+    }
+
+    private static function rejectCsrf(string $route): void {
 
         $accept = strtolower((string)($_SERVER['HTTP_ACCEPT'] ?? ''));
         $contentType = strtolower((string)($_SERVER['CONTENT_TYPE'] ?? ''));
@@ -232,5 +252,92 @@ class Security {
         $mins = intdiv($seconds, 60);
         $secs = $seconds % 60;
         return sprintf('%02d:%02d', $mins, $secs);
+    }
+
+    /**
+     * Emite cabeceras HTTP de seguridad (OWASP A05 / A02 / A03) compatibles con el
+     * personalizador de temas en el mismo origen (iframe SAMEORIGIN / frame-ancestors 'self').
+     */
+    public static function sendSecurityHeaders(): void {
+        if (headers_sent()) {
+            return;
+        }
+        header('X-Content-Type-Options: nosniff');
+        header('X-Frame-Options: SAMEORIGIN');
+        header('Referrer-Policy: strict-origin-when-cross-origin');
+        header('Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=()');
+        header(
+            "Content-Security-Policy: default-src 'self'; "
+            . "script-src 'self' 'unsafe-inline'; "
+            . "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+            . "font-src 'self' https://fonts.gstatic.com data:; "
+            . "img-src 'self' data: blob: https:; "
+            . "connect-src 'self'; "
+            . "frame-ancestors 'self'; "
+            . "base-uri 'self'; "
+            . "form-action 'self';"
+        );
+
+        $isHttps = (!empty($_SERVER['HTTPS']) && strtolower((string)$_SERVER['HTTPS']) !== 'off')
+            || (isset($_SERVER['SERVER_PORT']) && (int)$_SERVER['SERVER_PORT'] === 443)
+            || (strtolower((string)($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '')) === 'https');
+        if ($isHttps) {
+            header('Strict-Transport-Security: max-age=31536000; includeSubDomains');
+        }
+    }
+
+    /**
+     * Registra eventos de seguridad (logins, bloqueos, accesos denegados, errores)
+     * omitiendo automáticamente contraseñas, tokens u otros secretos.
+     */
+    public static function auditLog(string $event, array $context = []): string {
+        $correlationId = bin2hex(random_bytes(4));
+        try {
+            $logDir = dirname(__DIR__, 2) . '/storage/logs';
+            if (!is_dir($logDir)) {
+                @mkdir($logDir, 0750, true);
+            }
+            $htPath = dirname($logDir) . '/.htaccess';
+            if (!file_exists($htPath)) {
+                @file_put_contents($htPath, "<IfModule mod_authz_core.c>\n    Require all denied\n</IfModule>\n<IfModule !mod_authz_core.c>\n    Order allow,deny\n    Deny from all\n</IfModule>\n");
+            }
+
+            $blockedKeys = ['password', 'pass', 'pwd', 'token', 'csrf', 'secret', 'key', 'cookie', 'authorization', 'card', 'cvv'];
+            $safeContext = [];
+            foreach ($context as $k => $v) {
+                $lk = strtolower((string)$k);
+                $isSensitive = false;
+                foreach ($blockedKeys as $bk) {
+                    if (str_contains($lk, $bk)) {
+                        $isSensitive = true;
+                        break;
+                    }
+                }
+                if ($isSensitive) {
+                    continue;
+                }
+                if (is_scalar($v) || $v === null) {
+                    $safeContext[$k] = is_string($v) ? substr($v, 0, 180) : $v;
+                }
+            }
+
+            $entry = [
+                'ts' => date('c'),
+                'cid' => $correlationId,
+                'event' => preg_replace('/[^a-zA-Z0-9_\-.]/', '', $event),
+                'ip' => self::clientIp(),
+                'method' => (string)($_SERVER['REQUEST_METHOD'] ?? 'CLI'),
+                'route' => substr((string)($_GET['route'] ?? '/'), 0, 140),
+                'ctx' => $safeContext,
+            ];
+            @file_put_contents(
+                $logDir . '/security.log',
+                json_encode($entry, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) . PHP_EOL,
+                FILE_APPEND | LOCK_EX
+            );
+        } catch (\Throwable $e) {
+            // Nunca interrumpir la petición si falla la escritura del log
+        }
+        return $correlationId;
     }
 }

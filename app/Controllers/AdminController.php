@@ -18,6 +18,7 @@ class AdminController {
         // Verificar autenticación salvo en rutas de login
         $route = $_GET['route'] ?? '';
         if ($route !== 'admin/login' && !Auth::isAdmin()) {
+            Security::auditLog('admin_access_denied', ['target_route' => (string)$route]);
             header('Location: ' . (defined('APP_URL') ? APP_URL : '') . '/admin/login');
             exit;
         }
@@ -81,6 +82,7 @@ class AdminController {
 
         $res = Security::recordFailedLogin('admin', $email);
         if ($res['locked']) {
+            Security::auditLog('admin_login_locked', ['email_hash' => substr(sha1(strtolower(trim($email))), 0, 12)]);
             http_response_code(429);
             $_SESSION['admin_lockout_seconds'] = $res['remaining_seconds'];
             $_SESSION['flash_error'] = 'Alcanzaste el máximo de ' . Security::MAX_ACCOUNT_ATTEMPTS . ' intentos fallidos. Inicio de sesión bloqueado durante ' . Security::formatWaitTime($res['remaining_seconds']) . '.';

@@ -81,28 +81,34 @@ if (!function_exists('scms_render_invoice_button')) {
             echo '
             <script>
             function scmsPrintInvoice(data) {
-                var sym = data.currency || "$";
+                function esc(v) {
+                    return String(v === undefined || v === null ? "" : v).replace(/[&<>"\x27]/g, function(ch) {
+                        return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","\x27":"&#39;"}[ch];
+                    });
+                }
+                var sym = esc(data.currency || "$");
                 var itemsHtml = "";
                 if (Array.isArray(data.items) && data.items.length) {
                     itemsHtml = data.items.map(function(it) {
                         return "<tr>"
-                            + "<td>" + String(it.name).replace(/</g, "&lt;") + "</td>"
-                            + "<td style=\'text-align:center;\'>" + it.qty + "</td>"
-                            + "<td style=\'text-align:right;\'>" + sym + Number(it.price).toFixed(2) + "</td>"
-                            + "<td style=\'text-align:right;font-weight:600;\'>" + sym + Number(it.total).toFixed(2) + "</td>"
+                            + "<td>" + esc(it.name) + "</td>"
+                            + "<td style=\'text-align:center;\'>" + (parseInt(it.qty, 10) || 1) + "</td>"
+                            + "<td style=\'text-align:right;\'>" + sym + Number(it.price || 0).toFixed(2) + "</td>"
+                            + "<td style=\'text-align:right;font-weight:600;\'>" + sym + Number(it.total || 0).toFixed(2) + "</td>"
                             + "</tr>";
                     }).join("");
                 } else {
-                    itemsHtml = "<tr><td colspan=\'3\'>Pedido " + data.order_number + "</td><td style=\'text-align:right;\'>" + sym + data.subtotal.toFixed(2) + "</td></tr>";
+                    itemsHtml = "<tr><td colspan=\'3\'>Pedido " + esc(data.order_number) + "</td><td style=\'text-align:right;\'>" + sym + Number(data.subtotal || 0).toFixed(2) + "</td></tr>";
                 }
 
                 var win = window.open("", "_blank", "width=820,height=740");
+                if (!win) return;
                 win.document.write(`
                     <!DOCTYPE html>
                     <html lang="es">
                     <head>
                         <meta charset="UTF-8">
-                        <title>Factura Comercial - ${data.order_number}</title>
+                        <title>Factura Comercial - ${esc(data.order_number)}</title>
                         <style>
                             body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; padding: 36px; color: #1F2937; line-height: 1.5; }
                             .header { display: flex; justify-content: space-between; border-bottom: 2px solid #E5E7EB; padding-bottom: 18px; margin-bottom: 22px; gap: 20px; }
@@ -123,21 +129,21 @@ if (!function_exists('scms_render_invoice_button')) {
                         <button class="btn-print" onclick="window.print()">Imprimir / Guardar como PDF</button>
                         <div class="header">
                             <div>
-                                <div class="title">${data.store_name}</div>
+                                <div class="title">${esc(data.store_name)}</div>
                                 <div style="font-size: 12.5px; color: #6B7280; margin-top: 3px;">Comprobante Comercial Electrónico</div>
-                                ${data.store_address ? `<div style="font-size:12px;color:#6B7280;">${data.store_address}</div>` : ``}
-                                ${data.store_phone || data.store_email ? `<div style="font-size:12px;color:#6B7280;">${data.store_phone} ${data.store_email}</div>` : ``}
+                                ${data.store_address ? `<div style="font-size:12px;color:#6B7280;">${esc(data.store_address)}</div>` : ``}
+                                ${data.store_phone || data.store_email ? `<div style="font-size:12px;color:#6B7280;">${esc(data.store_phone)} ${esc(data.store_email)}</div>` : ``}
                             </div>
                             <div class="meta">
-                                <div><strong>Pedido N°:</strong> ${data.order_number}</div>
-                                <div><strong>Fecha:</strong> ${data.date}</div>
-                                <div><strong>Pago:</strong> ${data.payment_method} (${data.payment_status})</div>
+                                <div><strong>Pedido N°:</strong> ${esc(data.order_number)}</div>
+                                <div><strong>Fecha:</strong> ${esc(data.date)}</div>
+                                <div><strong>Pago:</strong> ${esc(data.payment_method)} (${esc(data.payment_status)})</div>
                             </div>
                         </div>
                         <div class="box">
                             <div style="font-weight: 700; margin-bottom: 4px;">Facturado a:</div>
-                            <div><strong>Cliente:</strong> ${data.customer_name} (${data.customer_email})</div>
-                            <div><strong>Dirección de entrega:</strong> ${data.shipping_address}</div>
+                            <div><strong>Cliente:</strong> ${esc(data.customer_name)} (${esc(data.customer_email)})</div>
+                            <div><strong>Dirección de entrega:</strong> ${esc(data.shipping_address)}</div>
                         </div>
                         <table>
                             <thead>
@@ -151,14 +157,14 @@ if (!function_exists('scms_render_invoice_button')) {
                             <tbody>${itemsHtml}</tbody>
                         </table>
                         <div class="total-box">
-                            <div><span>Subtotal:</span> <span>${sym}${data.subtotal.toFixed(2)}</span></div>
-                            ${data.discount > 0 ? `<div style="color:#008060;"><span>Descuento:</span> <span>-${sym}${data.discount.toFixed(2)}</span></div>` : ``}
-                            <div><span>Envío:</span> <span>${data.shipping > 0 ? sym + data.shipping.toFixed(2) : "Gratis"}</span></div>
-                            ${data.tax > 0 ? `<div><span>Impuestos:</span> <span>${sym}${data.tax.toFixed(2)}</span></div>` : ``}
-                            <div class="total-grand"><span>Total Pagado:</span> <span>${sym}${data.total.toFixed(2)}</span></div>
+                            <div><span>Subtotal:</span> <span>${sym}${Number(data.subtotal || 0).toFixed(2)}</span></div>
+                            ${Number(data.discount || 0) > 0 ? `<div style="color:#008060;"><span>Descuento:</span> <span>-${sym}${Number(data.discount || 0).toFixed(2)}</span></div>` : ``}
+                            <div><span>Envío:</span> <span>${Number(data.shipping || 0) > 0 ? sym + Number(data.shipping || 0).toFixed(2) : "Gratis"}</span></div>
+                            ${Number(data.tax || 0) > 0 ? `<div><span>Impuestos:</span> <span>${sym}${Number(data.tax || 0).toFixed(2)}</span></div>` : ``}
+                            <div class="total-grand"><span>Total Pagado:</span> <span>${sym}${Number(data.total || 0).toFixed(2)}</span></div>
                         </div>
                         <div style="margin-top: 40px; text-align: center; font-size: 11.5px; color: #9CA3AF; border-top: 1px dashed #E5E7EB; padding-top: 14px;">
-                            Comprobante generado por ${data.store_name}.
+                            Comprobante generado por ${esc(data.store_name)}.
                         </div>
                     </body>
                     </html>

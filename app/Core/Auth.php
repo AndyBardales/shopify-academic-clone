@@ -4,6 +4,19 @@ namespace ShopCMS\Core;
 class Auth {
     public static function init(): void {
         if (session_status() === PHP_SESSION_NONE && !headers_sent()) {
+            @ini_set('session.use_strict_mode', '1');
+            @ini_set('session.use_only_cookies', '1');
+            @ini_set('session.cookie_httponly', '1');
+            $isHttps = (!empty($_SERVER['HTTPS']) && strtolower((string)$_SERVER['HTTPS']) !== 'off')
+                || (isset($_SERVER['SERVER_PORT']) && (int)$_SERVER['SERVER_PORT'] === 443)
+                || (strtolower((string)($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '')) === 'https');
+            session_set_cookie_params([
+                'lifetime' => 0,
+                'path' => '/',
+                'secure' => $isHttps,
+                'httponly' => true,
+                'samesite' => 'Lax',
+            ]);
             session_start();
         }
     }
@@ -16,13 +29,16 @@ class Auth {
         $user = Database::fetch("SELECT * FROM " . Database::table('users') . " WHERE email = ? AND role IN ('admin', 'staff')", [$email]);
 
         if ($user && password_verify($password, $user['password'])) {
+            @session_regenerate_id(true);
             $_SESSION['user_id'] = $user['id'];
             $_SESSION['user_name'] = $user['name'];
             $_SESSION['user_email'] = $user['email'];
             $_SESSION['user_role'] = $user['role'];
+            Security::auditLog('admin_login_success', ['user_id' => (int)$user['id'], 'role' => (string)$user['role']]);
             return true;
         }
 
+        Security::auditLog('admin_login_failed', ['email_hash' => substr(sha1(strtolower(trim($email))), 0, 12)]);
         return false;
     }
 
@@ -49,7 +65,17 @@ class Auth {
 
     public static function logout(): void {
         self::init();
+        $uid = (int)($_SESSION['user_id'] ?? 0);
         unset($_SESSION['user_id'], $_SESSION['user_name'], $_SESSION['user_email'], $_SESSION['user_role']);
+        if ($uid > 0) {
+            Security::auditLog('admin_logout', ['user_id' => $uid]);
+        }
+        if (empty($_SESSION['customer_id'])) {
+            $_SESSION = [];
+            @session_regenerate_id(true);
+        } else {
+            @session_regenerate_id(true);
+        }
     }
 
     // ==========================================
@@ -100,6 +126,7 @@ class Auth {
                 $_SESSION['auth_error'] = "Esta cuenta se encuentra deshabilitada. Contacta con la tienda para más información.";
                 return false;
             }
+            @session_regenerate_id(true);
             unset($_SESSION['cart'], $_SESSION['cart_discount'], $_SESSION['cart_coupon'], $_SESSION['cart_owner_id'], $_SESSION['cart_error']);
             $_SESSION['customer_id'] = $user['id'];
             $_SESSION['customer_name'] = $user['name'];
@@ -108,9 +135,11 @@ class Auth {
             $_SESSION['customer_address'] = $user['address'] ?? '';
             self::$customerActiveCache = true;
             self::loadCustomerCart((int)$user['id']);
+            Security::auditLog('customer_login_success', ['customer_id' => (int)$user['id']]);
             return true;
         }
 
+        Security::auditLog('customer_login_failed', ['email_hash' => substr(sha1(strtolower(trim($email))), 0, 12)]);
         return false;
     }
 
@@ -147,6 +176,7 @@ class Auth {
             ]);
         }
 
+        @session_regenerate_id(true);
         unset($_SESSION['cart'], $_SESSION['cart_discount'], $_SESSION['cart_coupon'], $_SESSION['cart_owner_id'], $_SESSION['cart_error']);
         $_SESSION['customer_id'] = $userId;
         $_SESSION['customer_name'] = $name;
@@ -155,6 +185,7 @@ class Auth {
         $_SESSION['customer_address'] = $address ?? '';
         self::$customerActiveCache = true;
         self::loadCustomerCart((int)$userId);
+        Security::auditLog('customer_registered', ['customer_id' => $userId]);
 
         return $userId;
     }
@@ -215,6 +246,7 @@ class Auth {
 
     public static function customerLogout(): void {
         self::init();
+        $cid = (int)($_SESSION['customer_id'] ?? 0);
         self::saveCustomerCart();
         self::$customerActiveCache = null;
         unset(
@@ -230,6 +262,10 @@ class Auth {
             $_SESSION['cart_error'],
             $_SESSION['checkout_notice']
         );
+        if ($cid > 0) {
+            Security::auditLog('customer_logout', ['customer_id' => $cid]);
+        }
+        @session_regenerate_id(true);
     }
 
     /**
